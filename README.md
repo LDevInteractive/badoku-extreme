@@ -37,7 +37,9 @@ Reihenfolge** einfügen und ausführen (eine Datei pro Lauf):
 | `006_realtime.sql` | `games` in die Publikation `supabase_realtime` |
 | `007_round_rpc.sql` | Sudoku-Runde: `host_start_main`, `enter_digit`, Rundenlimit in `tick` |
 | `008_hunt_rpc.sql` | Jagd: `hunt_press`, Erzeugung in `enter_digit`, Fristablauf, Ende bei der letzten Jagd |
-| `009_…` | folgen mit den nächsten Meilensteinen |
+| `009_break_rpc.sql` | Pausen: Shots verteilen, Zufall, Trinken, bereit, erzwingen, nächste Runde oder Kassensturz |
+| `010_round_end_hold.sql` | Fertiges Raster bleibt am Rundenende mindestens `round_end_hold_s` sichtbar |
+| `011_…` | folgen mit den nächsten Meilensteinen |
 
 ### 3. Frontend konfigurieren
 

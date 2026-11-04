@@ -62,6 +62,7 @@ LOBBY ─► PROBERUNDE 4×4 (zählt nicht) ─► LOBBY (bereit)
 - Nur **Zeilen und Spalten** zählen als Linien (9 + 9 = 18). 3×3-Boxen zählen nicht.
 - **Rundenlimit:** `round_limit_s` = 480 s (8 Min.). Danach werden alle noch offenen Linien neutral aufgedeckt.
 - Eine Runde endet, wenn **alle 18 Linien gesperrt** sind (beansprucht oder neutral) oder das Rundenlimit erreicht ist. Laufende Jagden werden immer zuerst abgeschlossen.
+- Das fertige Raster bleibt nach Rundenende mindestens `round_end_hold_s` = 5 s stehen, damit alle die Lösung sehen, auch wenn keine Jagd mehr läuft. TV und Handys zeigen es; wer auf eine laufende Jagd wartet, sieht auf dem Handy «Runde beendet – warte auf laufende Jagden».
 
 ### 2.5 Fehler & Sperre
 - Der **erste Fehler** startet ein Fenster von `error_window_s` = 30 s.
@@ -193,7 +194,7 @@ Zwei Teilphasen:
 lobby ──host_start_trial──► trial_running ──(alle Linien / Limit)──► trial_ending ──(Jagden fertig)──► lobby (trial_done = true)
 lobby ──host_start_main───► round_running
 round_running ──(18 Linien gesperrt | Rundenlimit | 35. Jagd gestartet)──► round_ending
-round_ending ──(keine aktive Jagd)──► break_distribute   (überspringen, wenn niemand Shots hat → break_drink)
+round_ending ──(keine aktive Jagd und round_end_hold_s vorbei)──► break_distribute   (überspringen, wenn niemand Shots hat → break_drink)
 break_distribute ──(alle verteilt | Timeout → Zufall)──► break_drink
 break_drink ──(alle bereit | Host erzwingt)──► round_running   wenn hunts_started < 35 UND Spielzeit < 25 Min.
                                             └─► cashout          sonst
@@ -207,7 +208,7 @@ Jede Aktion ist nur in bestimmten Phasen erlaubt; sonst gibt die RPC `{ok:false,
 Es gibt keinen Server-Prozess, der Fristen überwacht. Lösung: **idempotente Funktion `tick(code)`**, die alle zeitabhängigen Übergänge anhand von `now()` prüft:
 - Aktive Jagden mit abgelaufener Frist → `failed`.
 - `round_running`/`trial_running` über Rundenlimit → offene Linien neutral aufdecken → `round_ending`/`trial_ending`.
-- `round_ending`/`trial_ending` ohne aktive Jagd → nächste Phase.
+- `round_ending`/`trial_ending` ohne aktive Jagd und nach `round_end_hold_s` → nächste Phase.
 - `break_distribute` über Timeout → Rest per Zufall → `break_drink`.
 - `tiebreak`-Gruppen über Limit → Gruppe beenden; alle beendet → Rangliste → `results`.
 
@@ -287,6 +288,7 @@ Indizes auf alle `game_id`/`round_id`-Fremdschlüssel.
   "error_max": 3,
   "lock_s": 20,
   "round_limit_s": 480,
+  "round_end_hold_s": 5,
   "game_limit_s": 1500,
   "sips_per_line": 1,
   "distribute_timeout_s": 60,
@@ -406,6 +408,7 @@ badoku-extreme/
 │  ├─ wakelock.js            Wake Lock inkl. Neu-Anforderung bei visibilitychange
 │  ├─ sound.js               WebAudio-Töne (generiert, keine Dateien)
 │  ├─ qr.js                  QR als SVG via vendor/qrcode.js
+│  ├─ util.js                DOM-Helfer, HTML-Escaping, localStorage mit Fallback, Verbindungsanzeige
 │  ├─ tv.js                  TV-Steuerung, Tick-Schleife (1 s)
 │  └─ play.js                Spieler-Steuerung, Tick-Fallback (5 s)
 ├─ mockups/                 klickbare Attrappe aller Bildschirme, abgenommene Vorlage
@@ -422,7 +425,9 @@ badoku-extreme/
 │  │  ├─ 005_game_rpc.sql    RPCs der Lobby + tick
 │  │  ├─ 006_realtime.sql    games in Publikation supabase_realtime
 │  │  ├─ 007_round_rpc.sql   Sudoku-Runde: host_start_main, enter_digit, Rundenlimit
-│  │  └─ 008_hunt_rpc.sql    Jagd: hunt_press, Fristablauf, Ende bei der letzten Jagd
+│  │  ├─ 008_hunt_rpc.sql    Jagd: hunt_press, Fristablauf, Ende bei der letzten Jagd
+│  │  ├─ 009_break_rpc.sql   Pausen: Shots verteilen, Zufall, Trinken, bereit, erzwingen
+│  │  └─ 010_round_end_hold.sql  Fertiges Raster bleibt am Rundenende sichtbar
 │  ├─ tests/rules_test.sql   Szenario-Tests (raise exception bei Fehler)
 │  └─ seed/                  (gitignored) puzzles.sql
 ├─ tools/
@@ -442,7 +447,7 @@ Alle Pfade **relativ** (GitHub Pages läuft unter `/badoku-extreme/`).
 | Lobby | «Warte auf Start», Mitspielerliste, Hinweis Wake Lock; erster Tipp aktiviert Wake Lock |
 | Sudoku | Raster (füllt Bildschirmbreite), Zahlenblock 1–N unten, Zelle antippen → Zahl tippen. Vorgaben fett, eigene Eingaben in eigener Farbe, aufgedeckte Linien eingefärbt (Spielerfarbe bzw. grau). Fehler: Zelle rot aufblitzen + Vibration, 3 Fehlerpunkte sichtbar. Sperre: Overlay mit Countdown. Kopfzeile: Rundentimer, Ballone in der Halle, eigene Linien. |
 | Jagd | Vollbild grün, Text «ZEILE 4 GELÖST!», grosser Countdown, Button erst nach 10 s aktiv (Fortschritt), danach riesig. Erfolg ✔ / Zeit abgelaufen ✗, je 2 s, dann zurück. Ton + Vibration beim Start. |
-| Rundenende | «Runde beendet – warte auf laufende Jagden» |
+| Rundenende | Fertiges Raster ohne Eingabe, solange keine Jagd läuft (§2.4); sonst «Runde beendet – warte auf laufende Jagden» |
 | Verteilen | «Du hast X Shots zu verteilen», grosse Kacheln pro Mitspieler (Farbe, Name, bereits erhalten), Tippen = +1, Button «Zufall», Rest-Zähler |
 | Trinken | «Du musst X Shots trinken» + Absender, Button «Getrunken & bereit» |
 | Kassensturz | «Du darfst N Ballone platzen lassen», Betragseingabe (Dezimaltastatur, `inputmode="decimal"`, Komma und Punkt erlaubt), Senden, Ändern bis abgeschlossen |

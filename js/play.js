@@ -56,6 +56,16 @@ let pressBusy = false;
 let vibratedFor = null;
 let lateTickFor = null;
 
+// Break state that only lives on this device: tiles count up at once, taps go out one
+// after the other, and a snapshot that is on its way cannot take a shot back.
+let breakRound = null;
+let sipsAcked = Infinity; // what the server said is left
+let sipsPending = 0;
+let sipsQueue = Promise.resolve();
+const sipsToTarget = new Map();
+let readySent = false;
+let breakMessage = '';
+
 // ---------- Connection to one game ----------
 function connect(code) {
   if (syncedCode === code) return;
@@ -137,8 +147,12 @@ function drawPlayer(state) {
   if (hunt) renderHunt(hunt);
   else if (phase === 'lobby') renderLobby(state);
   else if (state.round && phase === 'round_running') renderRound(state);
-  // The last line's effect still plays out before the screen changes.
-  else if (state.round && phase === 'round_ending') (isFxRunning(state) ? renderRound(state) : renderEnded(state));
+  // The finished grid stays until the break: nobody is hunting, or the last effect still plays out.
+  else if (state.round && phase === 'round_ending' && (!state.hunts_active.length || isFxRunning(state))) renderRound(state);
+  else if (state.round && (phase === 'break_distribute' || phase === 'break_drink') && isFxRunning(state)) renderRound(state);
+  else if (phase === 'round_ending') renderEnded(state);
+  else if (phase === 'break_distribute') renderDistribute(state);
+  else if (phase === 'break_drink') renderDrink(state);
   else renderOther(state);
 }
 
@@ -276,8 +290,9 @@ const lockedUntil = (state) => {
 function renderRound(state) {
   const { game, round, players, me } = state;
   const entries = entriesOf(state);
-  if (sel >= 0 && (round.revealed[sel] !== '0' || entries.has(sel))) sel = -1;
-  const locked = lockedUntil(state);
+  const running = game.phase === 'round_running';
+  if (!running || (sel >= 0 && (round.revealed[sel] !== '0' || entries.has(sel)))) sel = -1;
+  const locked = running ? lockedUntil(state) : null;
   const errors = errorCount(state);
   const mine = players.find((p) => p.id === me.player_id);
   const key = [round.id, round.revealed, state.lines.length, entries.size, sel, flash, locked, errors, game.balloons_left, mine.lines_claimed, netMessage, game.phase].join('|');
@@ -293,9 +308,9 @@ function renderRound(state) {
       keys.push(`<button data-digit="${d}" class="${(counts.get(String(d)) || 0) >= n ? 'done' : ''}" type="button">${d}</button>`);
     }
     const stat = (value, label) => `<div class="ph-stat"><b>${value}</b><span>${label}</span></div>`;
-    const roundTimer = game.phase === 'round_running' ? `<span data-cd="${new Date(round.deadline).getTime()}"></span>` : '–';
+    const roundTimer = running ? `<span data-cd="${new Date(round.deadline).getTime()}"></span>` : '–';
     return `<div class="ph-head">${stat(roundTimer, 'Runde')}${stat(esc(game.balloons_left), 'Ballone')}${stat(esc(mine.lines_claimed), 'Linien')}</div>
-      <div class="ph-sub"><span>${netMessage ? esc(netMessage) : `Runde ${esc(round.round_no)}`}</span>
+      <div class="ph-sub"><span>${netMessage ? esc(netMessage) : `Runde ${esc(round.round_no)}${running ? '' : ' beendet'}`}</span>
         <span class="err-dots" aria-label="${errors} Fehler">${Array.from({ length: game.config.error_max }, (_, k) => `<i class="${k < errors ? 'on' : ''}"></i>`).join('')}</span></div>
       <div class="ph-grid" style="--n:${n}">${gridHtml(state, { phone: true, entries, sel, flash, meColor: me.color })}</div>
       <div class="keypad" style="grid-template-columns:repeat(${KEYPAD_COLUMNS[n]},1fr)">${keys.join('')}</div>
@@ -448,6 +463,162 @@ function renderEnded() {
   </div>`);
 }
 
+// ---------- Break ----------
+const shotsWord = (n) => (n === 1 ? 'Shot' : 'Shots');
+
+function syncBreak(game) {
+  if (breakRound === game.round_no) return;
+  breakRound = game.round_no;
+  sipsAcked = Infinity;
+  sipsPending = 0;
+  sipsToTarget.clear();
+  readySent = false;
+  breakMessage = '';
+}
+
+const sipsLeft = (me) => Math.max(0, Math.min(me.sips_to_distribute, sipsAcked) - sipsPending);
+
+// The tiles stay in place and only their text changes: a redraw under a finger would
+// swallow the tap, and every shot of any player brings a new snapshot.
+function renderDistribute(state) {
+  const { game, players, me, palette, sip_transfers: transfers } = state;
+  syncBreak(game);
+  const left = sipsLeft(me);
+  if (left <= 0) {
+    const gaveAny = sipsAcked !== Infinity || transfers.some((t) => t.from_player === me.player_id);
+    draw('sips-done', String(gaveAny), () => `<div class="ph-pad ph-center">
+      <h1 class="ph-title">${gaveAny ? 'Alles verteilt' : 'Nichts zu verteilen'}</h1>
+      <p class="dim">Warte auf die anderen.</p>
+    </div>`);
+    return;
+  }
+  const others = players.filter((p) => p.id !== me.player_id);
+  const inkOf = (color) => palette.find((c) => c.color === color)?.ink || '#000000';
+  const drawn = draw('sips', `${game.round_no}|${others.map((p) => p.id).join()}`, () => `<div class="ph-pad">
+    <h1 class="ph-title sips-title" id="sips-title"></h1>
+    <div class="tiles">${others.map((p) => `<button class="tile" style="--c:${esc(p.color)};--ink:${esc(inkOf(p.color))}" data-give="${esc(p.id)}" type="button"><span class="tile-name">${esc(p.name)}</span><small data-recv="${esc(p.id)}"></small></button>`).join('')}</div>
+    <button class="btn btn-block" id="sips-random" data-random type="button">Zufall</button>
+    <p class="small faint center">Automatisch per Zufall in <span id="sips-cd" data-cd="${new Date(game.phase_deadline).getTime()}"></span></p>
+    <p class="form-err" id="sips-err" role="alert"></p>
+  </div>`);
+  if (drawn) updateCountdowns($('phone'));
+  $('sips-title').textContent = `Du hast ${left} ${shotsWord(left)} zu verteilen`;
+  // Own shots may be ahead of the snapshot, shots of others come only from it.
+  for (const p of others) {
+    let fromOthers = 0;
+    let fromMe = 0;
+    for (const t of transfers) {
+      if (t.to_player !== p.id) continue;
+      if (t.from_player === me.player_id) fromMe += t.amount;
+      else fromOthers += t.amount;
+    }
+    const total = fromOthers + Math.max(fromMe, sipsToTarget.get(p.id) || 0);
+    document.querySelector(`[data-recv="${p.id}"]`).textContent = `${total} erhalten`;
+  }
+  $('sips-err').textContent = breakMessage;
+}
+
+function showBreakMessage() {
+  breakMessage = ERRORS.network;
+  setTimeout(() => {
+    breakMessage = '';
+    redraw();
+  }, NET_MESSAGE_MS);
+}
+
+function onGive(target) {
+  const state = lastState;
+  if (!state?.me || state.game.phase !== 'break_distribute' || sipsLeft(state.me) <= 0) return;
+  sipsPending += 1;
+  sipsToTarget.set(target, (sipsToTarget.get(target) || 0) + 1);
+  redraw();
+  const round = breakRound;
+  sipsQueue = sipsQueue.then(async () => {
+    try {
+      const r = await rpc('give_sip', { p_code: syncedCode, p_token: token, p_target: target });
+      if (round !== breakRound) return;
+      sipsPending -= 1;
+      if (r.ok) {
+        sipsAcked = r.left;
+      } else {
+        sipsToTarget.set(target, Math.max(0, sipsToTarget.get(target) - 1));
+        if (r.reason === 'nothing_left') sipsAcked = 0;
+      }
+    } catch (e) {
+      console.warn(e);
+      if (round !== breakRound) return;
+      sipsPending -= 1;
+      sipsToTarget.set(target, Math.max(0, sipsToTarget.get(target) - 1));
+      showBreakMessage();
+    }
+    redraw();
+  });
+}
+
+function onRandom() {
+  const state = lastState;
+  if (!state?.me || state.game.phase !== 'break_distribute' || sipsLeft(state.me) <= 0) return;
+  const round = breakRound;
+  const button = $('sips-random');
+  if (button) button.disabled = true;
+  sipsQueue = sipsQueue.then(async () => {
+    try {
+      const r = await rpc('give_sips_random', { p_code: syncedCode, p_token: token });
+      if (round !== breakRound) return;
+      if (r.ok || r.reason === 'nothing_left') sipsAcked = 0;
+      sync?.refresh();
+    } catch (e) {
+      console.warn(e);
+      if (round !== breakRound) return;
+      showBreakMessage();
+      const again = $('sips-random');
+      if (again) again.disabled = false;
+    }
+    redraw();
+  });
+}
+
+function renderDrink(state) {
+  const { game, me, players } = state;
+  syncBreak(game);
+  if (me.ready || readySent) {
+    draw('drink-ready', '', () => `<div class="ph-pad ph-center">
+      <div class="ph-big ph-ok">✓</div>
+      <h1 class="ph-title">Bereit</h1>
+      <p class="dim">Warte auf die anderen.</p>
+    </div>`);
+    return;
+  }
+  const total = me.sips_to_drink;
+  const byId = new Map(players.map((p) => [p.id, p]));
+  const senders = me.sip_senders.map((s) => ({ ...s, player: byId.get(s.from_player) })).sort((a, b) => b.amount - a.amount || a.player.seat_no - b.player.seat_no);
+  draw('drink', `${game.round_no}|${total}|${senders.map((s) => `${s.from_player}:${s.amount}`).join()}`, () => `<div class="ph-pad ph-center">
+    <p class="label">Du musst trinken</p>
+    <div class="ph-big ph-drink">${esc(total)}</div>
+    <h1 class="ph-title">${shotsWord(total)}</h1>
+    <ul class="plist">${senders.map((s) => `<li><span class="sw" style="--c:${esc(s.player.color)}"></span><strong class="grow">${esc(s.player.name)}</strong><b>${esc(s.amount)}</b></li>`).join('')}</ul>
+    <p class="form-err" id="drink-err" role="alert"></p>
+    <button class="btn btn-primary btn-big btn-block drink-go" id="drink-go" data-ready type="button">Getrunken &amp; bereit</button>
+  </div>`);
+}
+
+async function onReady() {
+  const button = $('drink-go');
+  if (!button || button.disabled) return;
+  await withBusy(button, async () => {
+    try {
+      const r = await rpc('confirm_ready', { p_code: syncedCode, p_token: token });
+      if (r.ok) readySent = true;
+      await sync?.refresh();
+    } catch (e) {
+      console.warn(e);
+      const err = $('drink-err');
+      if (err) err.textContent = ERRORS.network;
+    }
+  });
+  redraw();
+}
+
 function renderOther({ game }) {
   draw('other', game.phase, () => `<div class="ph-pad ph-center">
     <h1 class="ph-title">Spiel ${esc(game.code)} läuft</h1>
@@ -476,7 +647,20 @@ $('phone').addEventListener('click', (e) => {
     onDigitTap(Number(digit.dataset.digit));
     return;
   }
-  if (e.target.closest('[data-press]')) onPress();
+  if (e.target.closest('[data-press]')) {
+    onPress();
+    return;
+  }
+  const give = e.target.closest('[data-give]');
+  if (give) {
+    onGive(give.dataset.give);
+    return;
+  }
+  if (e.target.closest('[data-random]')) {
+    onRandom();
+    return;
+  }
+  if (e.target.closest('[data-ready]')) onReady();
 });
 
 // Time passes without a new snapshot: countdowns, lock end, error window, end of an effect.

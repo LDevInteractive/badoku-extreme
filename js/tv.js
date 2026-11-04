@@ -4,7 +4,7 @@
 import { rpc } from './api.js';
 import { startSync } from './sync.js';
 import { serverNow, updateCountdowns } from './clock.js';
-import { gridHtml } from './grid.js';
+import { gridHtml, isFxRunning } from './grid.js';
 import { qrSvg } from './qr.js';
 import { $, esc, setConn, storeGet, storeRemove, storeSet, withBusy } from './util.js';
 
@@ -16,6 +16,8 @@ const CODE_KEY = 'badoku.tv.code';
 const pinKey = (gameCode) => `badoku.tv.pin.${gameCode}`;
 const TICKER_LINES = 5;
 const HUNTS_BIG = 3;
+const FORCE_RETRY_MS = 400;
+const FORCE_RETRIES = 5;
 
 const ERRORS = {
   bad_pin: 'Die PIN muss 4 bis 6 Ziffern haben.',
@@ -24,6 +26,7 @@ const ERRORS = {
   bad_config: 'Die Einstellungen sind ungültig.',
   no_free_code: 'Kein freier Spielcode gefunden, bitte nochmals versuchen.',
   too_few_players: 'Es braucht mindestens 2 Spieler.',
+  too_early: 'Noch einen Moment, dann nochmals drücken.',
   no_puzzle: 'Im Rätsel-Pool ist kein passendes Rätsel mehr.',
   network: 'Keine Verbindung zum Server, bitte nochmals versuchen.',
 };
@@ -38,6 +41,8 @@ let qrMarkup = '';
 let difficulty = 'leicht';
 let screen = null;
 let gridKey = '';
+let lastState = null;
+let breakKey = '';
 
 function fitStage() {
   const scale = Math.min(window.innerWidth / STAGE_W, window.innerHeight / STAGE_H);
@@ -150,8 +155,11 @@ function openGame(nextCode) {
     rpc('tick', { p_code: code }).catch((e) => console.warn('tick failed', e));
   }, TICK_MS);
   countdownTimer = setInterval(() => {
+    // The last reveal effect has played out, no new snapshot announces that.
+    if (screen === 'round' && lastState && isBreak(lastState.game.phase) && !isFxRunning(lastState)) render(lastState);
     updateCountdowns($('tv'));
     updateHuntBars();
+    updateForce();
   }, COUNTDOWN_MS);
 }
 
@@ -163,14 +171,22 @@ function leaveGame(message = '') {
   sync = null;
   code = null;
   hostPin = null;
+  lastState = null;
   storeRemove(CODE_KEY);
   renderStart(message);
 }
 
+const isBreak = (phase) => phase === 'break_distribute' || phase === 'break_drink';
+
 function render(state) {
+  lastState = state;
   const { phase } = state.game;
   if (phase === 'lobby') renderLobby(state);
   else if (state.round && (phase === 'round_running' || phase === 'round_ending')) renderRound(state);
+  // A reveal effect that is still running gets to finish before the break takes over.
+  else if (state.round && isBreak(phase) && isFxRunning(state)) renderRound(state);
+  else if (phase === 'break_distribute') renderDistribute(state);
+  else if (phase === 'break_drink') renderDrink(state);
   else renderOther(state);
 }
 
@@ -265,6 +281,7 @@ function tickerLine(event) {
   if (type === 'hunt_success') return `Jagd von ${payload.name} erfolgreich`;
   if (type === 'hunt_failed') return `Jagd von ${payload.name}: Zeit abgelaufen`;
   if (type === 'balloons_empty') return 'Letzter Ballon unterwegs: Das Spiel endet';
+  if (type === 'round_started') return `Runde ${payload.round_no} startet`;
   return null;
 }
 
@@ -303,7 +320,7 @@ function renderRound(state) {
     $('tv-grid').innerHTML = gridHtml(state);
   }
 
-  const ending = game.phase === 'round_ending';
+  const ending = game.phase !== 'round_running';
   const gameEnd = new Date(game.main_started_at).getTime() + game.config.game_limit_s * 1000;
   const roundEnd = new Date(round.deadline).getTime();
   const roundValue = ending ? '–' : `<span data-cd="${roundEnd}"></span>`;
@@ -325,6 +342,112 @@ function renderRound(state) {
   if (ending) $('leave').addEventListener('click', () => leaveGame());
   updateCountdowns($('tv'));
   updateHuntBars();
+}
+
+// ---------- Break ----------
+const shotsWord = (n) => (n === 1 ? 'Shot' : 'Shots');
+
+// Rows of the transfer table are summed per pair, a tap is one row in the database.
+function renderDistribute({ game, players, sip_transfers: transfers }) {
+  const key = `${game.round_no}/${game.phase_started_at}`;
+  if (screen !== 'distribute' || breakKey !== key) {
+    screen = 'distribute';
+    breakKey = key;
+    $('tv').innerHTML = `<div class="tv-break">
+      <div class="tv-break-head"><h1 class="tv-title">Pause: Wer gibt wem?</h1>
+        <span class="tv-label">Automatisch in <b class="tv-break-cd"><span data-cd="${new Date(game.phase_deadline).getTime()}"></span></b></span></div>
+      <table class="matrix" id="tv-matrix"></table>
+      <button class="tv-leave" id="leave" type="button">Anderes Spiel</button>
+    </div>`;
+    $('leave').addEventListener('click', () => leaveGame());
+    updateCountdowns($('tv'));
+  }
+  const sum = new Map();
+  for (const t of transfers) {
+    const key = `${t.from_player}/${t.to_player}`;
+    sum.set(key, (sum.get(key) || 0) + t.amount);
+  }
+  const given = new Set(transfers.map((t) => t.from_player));
+  const head = players.map((p) => `<th><span class="sw" style="--c:${esc(p.color)}"></span>${esc(p.name)}</th>`).join('');
+  const rows = players.map((from) => {
+    const cells = players.map((to) => {
+      if (from.id === to.id) return '<td class="self"></td>';
+      const n = sum.get(`${from.id}/${to.id}`) || 0;
+      return `<td class="${n ? 'hit' : ''}" style="--c:${esc(from.color)}">${n || ''}</td>`;
+    }).join('');
+    const left = from.sips_to_distribute;
+    const status = left
+      ? `<td class="state">noch ${esc(left)}</td>`
+      : `<td class="state ${given.has(from.id) ? 'ok' : ''}">${given.has(from.id) ? '✓ verteilt' : 'nichts'}</td>`;
+    return `<tr><th class="from"><span class="sw" style="--c:${esc(from.color)}"></span>${esc(from.name)}</th>${cells}${status}</tr>`;
+  }).join('');
+  $('tv-matrix').innerHTML = `<thead><tr><th class="from-head"></th>${head}<th class="state-head">Status</th></tr></thead><tbody>${rows}</tbody>`;
+}
+
+// Built once and only updated in parts, so the PIN field and the button stay in place.
+function renderDrink(state) {
+  const { game, players } = state;
+  const key = `${game.round_no}/${game.phase_started_at}`;
+  if (screen !== 'drink' || breakKey !== key) {
+    screen = 'drink';
+    breakKey = key;
+    const limit = new Date(game.main_started_at).getTime() + game.config.game_limit_s * 1000;
+    const last = game.balloons_left <= 0 || serverNow() >= limit;
+    $('tv').innerHTML = `<div class="tv-break">
+      <h1 class="tv-title">Pause: Trinken &amp; bereit machen</h1>
+      <div class="cash-grid" id="tv-drink"></div>
+      <form class="tv-break-foot" id="f-force" autocomplete="off">
+        <span class="dim" id="force-hint">${last ? 'Das war die letzte Runde: Sobald alle bereit sind, folgt der Kassensturz.' : 'Das nächste Sudoku startet, sobald alle bereit sind.'}</span>
+        <span class="tv-force" id="force-box" hidden>
+          <input class="input tv-pin tv-start-pin" id="force-pin" type="password" inputmode="numeric" maxlength="6" placeholder="PIN" aria-label="Host-PIN" autocomplete="off" ${hostPin ? 'hidden' : ''}>
+          <button class="btn btn-primary" id="force-go" type="submit">Weiter erzwingen</button>
+        </span>
+      </form>
+      <button class="tv-leave" id="leave" type="button">Anderes Spiel</button>
+    </div>`;
+    $('leave').addEventListener('click', () => leaveGame());
+    $('f-force').addEventListener('submit', onForce);
+  }
+  $('tv-drink').innerHTML = players.map((p) => `<div class="cash-row"><span class="sw" style="--c:${esc(p.color)}"></span><div>${esc(p.name)}<small>trinkt ${esc(p.sips_to_drink)} ${shotsWord(p.sips_to_drink)}</small></div><span class="tick ${p.ready ? '' : 'no'}">${p.ready ? '✓' : '…'}</span></div>`).join('');
+  updateForce();
+}
+
+// The button appears by the clock alone, no snapshot arrives at that moment.
+function updateForce() {
+  const box = $('force-box');
+  if (!box || !lastState?.game.phase_deadline) return;
+  box.hidden = serverNow() < new Date(lastState.game.phase_deadline).getTime();
+}
+
+async function onForce(e) {
+  e.preventDefault();
+  const pin = hostPin || $('force-pin').value.trim();
+  const hint = $('force-hint');
+  await withBusy($('force-go'), async () => {
+    try {
+      // The button appears by this device's clock, which can be slightly ahead of the server's.
+      let r = await rpc('host_force_continue', { p_code: code, p_pin: pin });
+      for (let i = 0; r.reason === 'too_early' && i < FORCE_RETRIES; i++) {
+        await new Promise((resolve) => setTimeout(resolve, FORCE_RETRY_MS));
+        r = await rpc('host_force_continue', { p_code: code, p_pin: pin });
+      }
+      if (r.ok) {
+        hostPin = pin;
+        storeSet(pinKey(code), pin);
+        await sync.refresh();
+      } else if (r.reason === 'bad_pin') {
+        hostPin = null;
+        storeRemove(pinKey(code));
+        $('force-pin').hidden = false;
+        hint.textContent = ERRORS.wrong_pin;
+      } else if (r.reason === 'too_early') {
+        hint.textContent = ERRORS.too_early;
+      }
+    } catch (err) {
+      console.warn(err);
+      hint.textContent = ERRORS.network;
+    }
+  });
 }
 
 function renderOther({ game }) {

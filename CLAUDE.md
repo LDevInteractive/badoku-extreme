@@ -419,8 +419,9 @@ badoku-extreme/
 │  │  ├─ 002_schema.sql
 │  │  ├─ 003_security.sql    RLS, revoke/grant
 │  │  ├─ 004_helpers.sql     Token/PIN, Linien-Helfer, Snapshot
-│  │  ├─ 005_game_rpc.sql    alle RPCs + tick
-│  │  └─ 006_realtime.sql    games in Publikation supabase_realtime
+│  │  ├─ 005_game_rpc.sql    RPCs der Lobby + tick
+│  │  ├─ 006_realtime.sql    games in Publikation supabase_realtime
+│  │  └─ 007_round_rpc.sql   Sudoku-Runde: host_start_main, enter_digit, Rundenlimit
 │  ├─ tests/rules_test.sql   Szenario-Tests (raise exception bei Fehler)
 │  └─ seed/                  (gitignored) puzzles.sql
 ├─ tools/
@@ -475,7 +476,7 @@ Gilt auf dem TV und auf allen Handys. Das Handy des Lösers zeigt stattdessen so
 - **Name:** Der Name des Lösers blitzt in Spielerfarbe in der Mitte der Linie auf (ca. 1,5 s) und bleibt ganz im Raster.
 - **Neutrale Linien:** nur ruhiges Einblenden in Grau, kein Name, keine Ballone.
 - **Kreuzung:** Kreuzen sich zwei gelöste Linien verschiedener Besitzer, zeigt die Zelle beide Farben: Zeilenfarbe links/rechts, Spaltenfarbe oben/unten. So läuft jede Linie sichtbar durch.
-- **Robustheit:** Der Effekt wird aus `claimed_at` und Serverzeit berechnet. Ein neuer Snapshot setzt ihn fort, statt ihn neu zu starten. Nach Neuladen läuft er nur, wenn die Linie gerade erst gelöst wurde.
+- **Robustheit:** Der Effekt läuft ab dem Moment, in dem das Gerät die Linie zum ersten Mal sieht, damit er auch bei langsamer Verbindung vollständig zu sehen ist. Ein neuer Snapshot setzt ihn fort, statt ihn neu zu starten. Nach Neuladen läuft er nur, wenn die Linie laut `claimed_at` und Serverzeit gerade erst gelöst wurde.
 - `prefers-reduced-motion`: nur Einblenden und Name.
 
 ---

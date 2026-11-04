@@ -427,3 +427,83 @@ footer.foot {
   font-size: 13px;
   text-align: center;
 }
+
+/* ---------- Sudoku grid ---------- */
+.grid { display: grid; grid-template-columns: repeat(var(--n), 1fr); width: 100%; aspect-ratio: 1; border: 3px solid var(--text-dim); border-radius: var(--r-1); overflow: hidden; background: var(--bg-elev); }
+.cell { display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; padding: 0; border: 0; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); background: transparent; color: var(--text-dim); font-size: inherit; font-weight: 500; font-variant-numeric: tabular-nums; -webkit-tap-highlight-color: transparent; }
+button.cell { cursor: pointer; }
+.cell.br { border-right: 3px solid var(--text-dim); }
+.cell.bb { border-bottom: 3px solid var(--text-dim); }
+.cell.given { color: var(--text); font-weight: 800; }
+.cell.rev { background: color-mix(in srgb, var(--line) 42%, var(--bg)); color: #fff; font-weight: 800; }
+.cell.own { color: color-mix(in srgb, var(--me) 62%, #fff); font-weight: 800; }
+.cell.peer { background: var(--bg-elev-2); }
+.cell.rev.peer { background: color-mix(in srgb, var(--line) 52%, var(--bg)); }
+/* Two solved lines cross: the row colour runs left/right, the column colour top/bottom. */
+.cell.rev.rev-cross { --a: color-mix(in srgb, var(--line) 42%, var(--bg)); --b: color-mix(in srgb, var(--line2) 42%, var(--bg)); background: conic-gradient(from 45deg, var(--a) 0 90deg, var(--b) 90deg 180deg, var(--a) 180deg 270deg, var(--b) 270deg); }
+.cell.sel { background: color-mix(in srgb, var(--accent) 28%, var(--bg)); box-shadow: inset 0 0 0 2px var(--accent); }
+.cell.flash { animation: flash 500ms ease-out; }
+@keyframes flash { 0%, 50% { background: var(--danger); color: #fff; } 100% { background: transparent; } }
+
+/* ---------- Reveal effects ----------
+   Every element gets --d (delay, negative once running) and --dur from mock.js,
+   so a re-render continues the animation. "backwards" keeps the start frame during
+   the delay; afterwards the normal cell style takes over. */
+.grid-wrap { position: relative; width: 100%; }
+.cell.fx { position: relative; z-index: 2; --b0: var(--bg-elev); --c0: var(--text); }
+.cell.fx.fx-fresh { --c0: transparent; }
+.cell.fx.fx-prior { --b0: color-mix(in srgb, var(--prior, var(--line)) 42%, var(--bg)); --c0: #fff; }
+.cell.fx.fx-c-balloon, .cell.fx.fx-c-neutral {
+  animation-delay: var(--d);
+  animation-duration: var(--dur);
+  animation-fill-mode: backwards;
+}
+.cell.fx-c-balloon { animation-name: fx-unveil; animation-timing-function: ease-out; }
+@keyframes fx-unveil {
+  0% { background: var(--b0); color: var(--c0); transform: scale(1); }
+  8% { background: #fff; color: #fff; transform: scale(1.22); box-shadow: 0 0 0.8em var(--fxc); }
+  40% { background: var(--fxc); color: #fff; }
+}
+.cell.fx-c-neutral { animation-name: fx-neutral; animation-timing-function: ease-out; }
+@keyframes fx-neutral { 0% { background: var(--b0); color: var(--c0); } }
+
+.fx-layer { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+/* Layer elements stay invisible (opacity 0) until their own delay has passed. */
+.fx-layer i { position: absolute; display: block; opacity: 0; animation-delay: var(--d); }
+.fx-band { position: absolute; opacity: 0; border-radius: 0.12em; animation: fx-glow var(--dur) ease-out var(--d); }
+@keyframes fx-glow {
+  0% { opacity: 0; box-shadow: 0 0 0 0 var(--fxc); }
+  22% { opacity: 1; box-shadow: 0 0 1em 0.22em var(--fxc), inset 0 0 0 0.05em #fff; }
+  100% { opacity: 0; box-shadow: 0 0 0.3em 0 var(--fxc); }
+}
+.fx-name { z-index: 2; translate: var(--shift) -50%; padding: 0.1em 0.5em; border-radius: 999px; background: var(--fxc); color: var(--ink); font-size: 0.72em; font-style: normal; font-weight: 900; line-height: 1.25; white-space: nowrap; box-shadow: 0 0 0 0.09em #fff, 0 0 0.9em 0.15em var(--fxc); animation-name: fx-name; animation-duration: var(--dur); animation-timing-function: ease-out; }
+@keyframes fx-name {
+  0% { opacity: 0; transform: scale(0.5); }
+  12% { opacity: 1; transform: scale(1.14); }
+  22% { opacity: 1; transform: scale(1); }
+  82% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.96); }
+}
+.fx-balloon { width: var(--size); aspect-ratio: 0.86; margin: 0; translate: -50% -52%; border-radius: 50% 50% 47% 47%; background: radial-gradient(circle at 34% 28%, #fff 0, color-mix(in srgb, var(--fxc) 55%, #fff) 13%, var(--fxc) 48%, color-mix(in srgb, var(--fxc) 68%, #000) 100%); box-shadow: 0 0.06em 0.22em rgba(0, 0, 0, 0.5); animation-name: fx-inflate; animation-duration: var(--dur); animation-timing-function: cubic-bezier(0.3, 1.2, 0.5, 1); }
+.fx-balloon::after { content: ""; position: absolute; left: 50%; bottom: -7%; width: 15%; aspect-ratio: 1; translate: -50% 0; background: color-mix(in srgb, var(--fxc) 70%, #000); clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+@keyframes fx-inflate {
+  0% { opacity: 1; transform: scale(0.05) rotate(-9deg); }
+  62% { opacity: 1; transform: scale(1) rotate(5deg); }
+  86% { opacity: 1; transform: scale(0.97) rotate(-3deg); }
+  100% { opacity: 1; transform: scale(1.3) rotate(0deg); }
+}
+.fx-ring { width: var(--size); aspect-ratio: 1; translate: -50% -50%; border-radius: 50%; border: 0.1em solid #fff; animation-name: fx-ring; animation-duration: 340ms; animation-timing-function: ease-out; }
+@keyframes fx-ring { 0% { opacity: 1; transform: scale(0.45); } 100% { opacity: 0; transform: scale(1.6); } }
+.fx-shard { width: 0.2em; height: 0.13em; margin: -0.065em 0 0 -0.1em; border-radius: 0.03em; background: var(--fxc); animation-name: fx-shard; animation-duration: 520ms; animation-timing-function: cubic-bezier(0.15, 0.7, 0.35, 1); }
+.fx-shard.white { background: #fff; }
+@keyframes fx-shard {
+  0% { opacity: 1; transform: translate(0, 0) rotate(0deg) scale(1); }
+  65% { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) rotate(var(--rot)) scale(0.55); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cell.flash { animation-duration: 1ms; }
+  .fx-band, .fx-balloon, .fx-ring, .fx-shard { display: none; }
+  .cell.fx.fx-c-balloon { animation-name: fx-neutral; }
+}

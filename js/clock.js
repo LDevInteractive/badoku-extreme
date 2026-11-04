@@ -29,3 +29,12 @@ export function formatMmss(ms) {
   const s = Math.max(0, Math.ceil(ms / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
+
+/** Refreshes every countdown below root: data-cd = deadline in server ms, data-fmt = 's' or m:ss. */
+export function updateCountdowns(root = document) {
+  const now = serverNow();
+  root.querySelectorAll('[data-cd]').forEach((el) => {
+    const ms = Number(el.dataset.cd) - now;
+    el.textContent = el.dataset.fmt === 's' ? String(Math.max(0, Math.ceil(ms / 1000))) : formatMmss(ms);
+  });
+}

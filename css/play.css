@@ -34,3 +34,23 @@ body { overflow: hidden; }
 .plist li { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-3); border-radius: var(--r-1); background: var(--bg-elev); }
 .sw { flex: none; width: 16px; height: 16px; border-radius: 4px; background: var(--c); }
 .wake-ok { color: var(--ok); }
+
+/* ---------- Round ---------- */
+.ph-head { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s-2); padding: var(--s-3) var(--s-3) var(--s-2); }
+.ph-stat { display: flex; flex-direction: column; align-items: center; }
+.ph-stat b { font-size: 21px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.ph-stat > span { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); }
+.ph-sub { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); padding: 0 var(--s-3) var(--s-2); font-size: 13px; color: var(--text-dim); min-height: 22px; }
+.err-dots { display: inline-flex; gap: 6px; }
+.err-dots i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--border-strong); }
+.err-dots i.on { background: var(--danger); border-color: var(--danger); }
+/* The grid takes the width, but leaves room for header and number pad on short screens. */
+.ph-grid { --w: min(100vw - 16px, 100dvh - 270px); width: var(--w); margin-inline: auto; font-size: calc(var(--w) / var(--n) * 0.62); }
+.ph-grid .grid { font-size: inherit; }
+.keypad { display: grid; gap: var(--s-2); padding: var(--s-3) var(--s-2); margin-top: auto; }
+.keypad button { min-height: 56px; border-radius: var(--r-2); border: 1px solid var(--border-strong); background: var(--bg-elev-2); font-size: 26px; font-weight: 800; cursor: pointer; font-variant-numeric: tabular-nums; }
+.keypad button:active { background: var(--accent); color: var(--accent-ink); }
+.keypad button.done { opacity: 0.3; }
+.overlay { position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s-4); padding: var(--s-5); text-align: center; }
+.ov-lock { background: rgba(12, 13, 18, 0.93); }
+.ph-big { font-size: 112px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; color: var(--danger); }

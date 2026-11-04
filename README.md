@@ -35,7 +35,8 @@ Reihenfolge** einfügen und ausführen (eine Datei pro Lauf):
 | `004_helpers.sql` | interne Helfer (Standard-Config, Farben, Token, PIN, Snapshot) |
 | `005_game_rpc.sql` | RPCs der Lobby: `create_game`, `host_check`, `join_game`, `get_state`, `tick` |
 | `006_realtime.sql` | `games` in die Publikation `supabase_realtime` |
-| `007_…` | folgen mit den nächsten Meilensteinen |
+| `007_round_rpc.sql` | Sudoku-Runde: `host_start_main`, `enter_digit`, Rundenlimit in `tick` |
+| `008_…` | folgen mit den nächsten Meilensteinen |
 
 ### 3. Frontend konfigurieren
 

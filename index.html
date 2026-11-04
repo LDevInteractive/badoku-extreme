@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="de-CH">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0c0d12">
+  <title>Badoku-Extreme</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%277%27 fill=%27%230c0d12%27/%3E%3Cpath d=%27M9 8h14v4h-9v3h7a3 3 0 0 1 3 3v3a3 3 0 0 1-3 3H9v-4h9v-3h-7a3 3 0 0 1-3-3V8z%27 fill=%27%23c5f135%27/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/base.css">
+  <style>
+    .hero {
+      padding-top: var(--s-6);
+    }
+
+    .choice {
+      display: grid;
+      gap: var(--s-3);
+    }
+
+    @media (min-width: 560px) {
+      .choice {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    .choice .btn {
+      flex-direction: column;
+      gap: var(--s-1);
+      min-height: 112px;
+      align-items: flex-start;
+      padding: var(--s-4) var(--s-5);
+      text-align: left;
+    }
+
+    .choice .btn .label {
+      color: inherit;
+      opacity: 0.7;
+    }
+
+    .choice .btn-primary .label {
+      opacity: 0.75;
+    }
+
+    .choice .btn strong {
+      font-size: 24px;
+      line-height: 1.1;
+    }
+
+    .choice .btn .small {
+      font-weight: 500;
+      opacity: 0.8;
+    }
+  </style>
+</head>
+<body>
+  <div class="conn" id="conn" aria-live="polite">
+    <span class="status-dot" id="conn-dot" data-state="pending"></span>
+    <span id="conn-text">verbinde …</span>
+  </div>
+
+  <main class="page stack-lg">
+    <header class="hero stack">
+      <h1 class="brand">Badoku<span class="brand-accent">-Extreme</span></h1>
+      <p class="tagline">Ballon-Sudoku-Extreme: ein Sudoku, sieben Handys, 35 Ballone. Wer eine Linie löst, rennt.</p>
+    </header>
+
+    <nav class="choice" aria-label="Ansicht wählen">
+      <a class="btn btn-primary" href="tv.html">
+        <span class="label">Laptop am TV</span>
+        <strong>TV-Ansicht</strong>
+        <span class="small">Spiel erstellen, QR-Code, Raster, Timer</span>
+      </a>
+      <a class="btn" href="play.html">
+        <span class="label">Handy</span>
+        <strong>Mitspielen</strong>
+        <span class="small">Code eingeben oder QR-Code scannen</span>
+      </a>
+    </nav>
+
+    <section class="card" aria-labelledby="check-title">
+      <div class="card-title">
+        <h2 class="h2" id="check-title">Systemcheck</h2>
+        <span class="label" id="app-version"></span>
+      </div>
+
+      <div class="check">
+        <span class="status-dot" id="srv-dot" data-state="pending"></span>
+        <span class="check-name">Server</span>
+        <button class="btn btn-ghost" id="srv-btn" type="button">Erneut</button>
+        <p class="check-detail" id="srv-detail">Rufe <span class="mono">server_time()</span> auf …</p>
+      </div>
+
+      <div class="check">
+        <span class="status-dot" id="rt-dot" data-state="pending"></span>
+        <span class="check-name">Realtime</span>
+        <span></span>
+        <p class="check-detail" id="rt-detail">Abonniere Testkanal …</p>
+      </div>
+
+      <div class="check">
+        <span class="status-dot" id="wl-dot" data-state="pending"></span>
+        <span class="check-name">Wake Lock</span>
+        <button class="btn btn-ghost" id="wl-btn" type="button">Aktivieren</button>
+        <p class="check-detail" id="wl-detail">Prüfe Unterstützung …</p>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="colors-title">
+      <div class="card-title">
+        <h2 class="h2" id="colors-title">Spielerfarben</h2>
+        <span class="label">8 + neutral</span>
+      </div>
+      <div class="chips" aria-hidden="true">
+        <span class="chip" style="--chip: var(--p-red)"></span>
+        <span class="chip" style="--chip: var(--p-orange)"></span>
+        <span class="chip" style="--chip: var(--p-yellow)"></span>
+        <span class="chip" style="--chip: var(--p-green)"></span>
+        <span class="chip" style="--chip: var(--p-teal)"></span>
+        <span class="chip" style="--chip: var(--p-blue)"></span>
+        <span class="chip" style="--chip: var(--p-violet)"></span>
+        <span class="chip" style="--chip: var(--p-pink)"></span>
+        <span class="chip" style="--chip: var(--p-neutral)"></span>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <span id="env-detail"></span>
+    </footer>
+  </main>
+
+  <script src="vendor/supabase.js"></script>
+  <script type="module">
+    import { APP_VERSION } from './js/config.js';
+    import { isConfigured, getClient, measureServerTime } from './js/api.js';
+    import * as wakelock from './js/wakelock.js';
+
+    const $ = (id) => document.getElementById(id);
+    const setCheck = (prefix, state, html) => {
+      $(`${prefix}-dot`).dataset.state = state;
+      $(`${prefix}-detail`).innerHTML = html;
+    };
+    const setConn = (state, text) => {
+      $('conn-dot').dataset.state = state;
+      $('conn-text').textContent = text;
+    };
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+    $('app-version').textContent = `v${APP_VERSION}`;
+    $('env-detail').textContent =
+      `${location.hostname || 'lokale Datei'} · ${window.isSecureContext ? 'sicherer Kontext (HTTPS)' : 'kein sicherer Kontext'}`;
+
+    // ---- Server -------------------------------------------------------------
+    async function checkServer() {
+      const btn = $('srv-btn');
+      btn.disabled = true;
+      setCheck('srv', 'pending', 'Rufe <span class="mono">server_time()</span> auf …');
+      try {
+        const r = await measureServerTime();
+        const time = r.serverNow.toLocaleTimeString('de-CH');
+        const offset = Math.round(r.offsetMs);
+        setCheck(
+          'srv',
+          'ok',
+          `Serverzeit <span class="mono">${esc(time)}</span> · Umlauf <span class="mono">${r.roundTripMs} ms</span> · Versatz <span class="mono">${offset >= 0 ? '+' : ''}${offset} ms</span>`
+        );
+      } catch (e) {
+        setCheck('srv', 'error', `Fehler: <span class="mono">${esc(e.message)}</span>`);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // ---- Realtime -----------------------------------------------------------
+    function checkRealtime() {
+      const channel = getClient().channel(`smoke-${Math.random().toString(36).slice(2, 8)}`);
+      channel.subscribe((status, err) => {
+        if (status === 'SUBSCRIBED') {
+          setCheck('rt', 'ok', 'Kanal verbunden · <span class="mono">SUBSCRIBED</span>');
+          setConn('ok', 'verbunden');
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          setCheck('rt', 'error', `Kanal <span class="mono">${esc(status)}</span>${err ? ` · ${esc(err.message || err)}` : ''}`);
+          setConn('error', 'getrennt');
+        } else {
+          setCheck('rt', 'warn', `Kanal <span class="mono">${esc(status)}</span>`);
+          setConn('warn', 'verbinde …');
+        }
+      });
+    }
+
+    // ---- Wake Lock ----------------------------------------------------------
+    function initWakeLock() {
+      const btn = $('wl-btn');
+      if (!wakelock.isSupported()) {
+        setCheck('wl', 'warn', 'Nicht unterstützt in diesem Browser (braucht HTTPS und einen aktuellen Browser).');
+        btn.disabled = true;
+        return;
+      }
+      setCheck('wl', 'warn', 'Unterstützt. Tippe auf «Aktivieren», dann 2 Minuten warten: Bildschirm muss an bleiben.');
+      wakelock.onChange((state, detail) => {
+        if (state === 'active') {
+          setCheck('wl', 'ok', 'Aktiv · Bildschirm bleibt an. Tab wechseln und zurück: muss aktiv bleiben.');
+          btn.textContent = 'Freigeben';
+        } else if (state === 'released') {
+          setCheck('wl', 'warn', 'Freigegeben.');
+          btn.textContent = 'Aktivieren';
+        } else if (state === 'error') {
+          setCheck('wl', 'error', `Fehler: <span class="mono">${esc(detail?.message || detail)}</span>`);
+          btn.textContent = 'Aktivieren';
+        }
+      });
+      btn.addEventListener('click', () => {
+        if (wakelock.isActive()) wakelock.releaseWakeLock();
+        else wakelock.requestWakeLock();
+      });
+    }
+
+    // ---- Boot ---------------------------------------------------------------
+    initWakeLock();
+    if (!isConfigured()) {
+      const hint = '<span class="mono">js/config.js</span> ist noch nicht ausgefüllt (Supabase-URL und Publishable Key).';
+      setCheck('srv', 'warn', hint);
+      setCheck('rt', 'warn', hint);
+      setConn('warn', 'nicht konfiguriert');
+      $('srv-btn').disabled = true;
+    } else {
+      $('srv-btn').addEventListener('click', checkServer);
+      checkServer();
+      checkRealtime();
+    }
+  </script>
+</body>
+</html>

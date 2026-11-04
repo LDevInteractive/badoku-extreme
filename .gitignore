@@ -1,0 +1,8 @@
+# Badoku-Extreme
+supabase/seed/        # puzzles.sql enthaelt Loesungen -> nie ins oeffentliche Repo
+node_modules/
+.env
+.env.*
+*.log
+.DS_Store
+Thumbs.db

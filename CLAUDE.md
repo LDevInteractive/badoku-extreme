@@ -1,4 +1,4 @@
-# CLAUDE.md – Sudoku-Sturm
+# CLAUDE.md – Badoku-Extreme
 
 > Projektkontext für Claude Code. Diese Datei ist die verbindliche Spezifikation.
 > Bei Widersprüchen zwischen Code und dieser Datei: **nachfragen**, nicht raten.
@@ -22,7 +22,7 @@
 
 Ein Live-Partyspiel für **7 Spieler** an einem Spielnachmittag in einer Lagerhalle. Dauer **30–45 Minuten**. Es gibt **keinen Moderator**: Die App leitet das Spiel. Der Spielleiter (Luca) spielt selbst mit und kennt die Rätsel nicht.
 
-**Kernidee:** Alle lösen gleichzeitig dasselbe Sudoku auf dem eigenen Handy. Wer als Erster eine Zeile oder Spalte mit **seiner eigenen Eingabe** abschliesst, sperrt sie für sich, und sie wird für alle aufgedeckt. Er legt das Handy hin und hat **50 Sekunden**, um in der Halle einen der versteckten Ballone zu holen und in sein Depot am Platz zu werfen. In den Ballonen stecken 3D-gedruckte Euro-Münzen. Am Ende werden die Ballone geplatzt, und wer am meisten Geld hat, gewinnt. Gelöste Linien geben zudem **Schlucke**, die in den Pausen zwischen den Sudokus an Mitspieler verteilt werden.
+**Kernidee:** Alle lösen gleichzeitig dasselbe Sudoku auf dem eigenen Handy. Wer als Erster eine Zeile oder Spalte mit **seiner eigenen Eingabe** abschliesst, sperrt sie für sich, und sie wird für alle aufgedeckt. Er legt das Handy hin und hat **50 Sekunden**, um in der Halle einen der versteckten Ballone zu holen und in sein Depot am Platz zu werfen. In den Ballonen stecken 3D-gedruckte Euro-Münzen. Am Ende werden die Ballone geplatzt, und wer am meisten Geld hat, gewinnt. Gelöste Linien geben zudem **Shots**, die in den Pausen zwischen den Sudokus an Mitspieler verteilt werden.
 
 **Geräte:**
 - **TV-Ansicht** (`tv.html`): Laptop am TV/Beamer. Zeigt Lobby mit QR-Code, aufgedecktes Raster, Timer, Ticker, Jagden, Pausen, Kassensturz, Rangliste. Treibt die Spielzeit voran (Tick, siehe §5.4).
@@ -36,7 +36,7 @@ Ein Live-Partyspiel für **7 Spieler** an einem Spielnachmittag in einer Lagerha
 
 ```
 LOBBY ─► PROBERUNDE 4×4 (zählt nicht) ─► LOBBY (bereit)
-      ─► HAUPTSPIEL: [ SUDOKU 9×9 ─► PAUSE (Schlucke) ]  × n
+      ─► HAUPTSPIEL: [ SUDOKU 9×9 ─► PAUSE (Shots) ]  × n
       ─► KASSENSTURZ ─► (POWERSUDOKU 6×6 bei Gleichstand) ─► RANGLISTE & STATISTIK
 ```
 
@@ -52,7 +52,7 @@ LOBBY ─► PROBERUNDE 4×4 (zählt nicht) ─► LOBBY (bereit)
 - Ein 4×4-Sudoku (Boxen 2×2), damit alle den Ablauf kennen.
 - Gleiche Mechanik wie das Hauptspiel (Eingabe, Fehler, Sperre, Linie gelöst, Jagd-Animation, Button), aber:
   - Niemand rennt wirklich. Jagd-Zeiten verkürzt (`trial_hunt_duration_s` 15, `trial_hunt_min_press_s` 5).
-  - **Keine Schlucke, keine Statistik, zählt nicht** zu den 35 Jagden und nicht zum 25-Minuten-Limit.
+  - **Keine Shots, keine Statistik, zählt nicht** zu den 35 Jagden und nicht zum 25-Minuten-Limit.
 - Danach zurück in die Lobby, der Host startet das Hauptspiel.
 
 ### 2.4 Sudoku-Runde (9×9)
@@ -67,15 +67,16 @@ LOBBY ─► PROBERUNDE 4×4 (zählt nicht) ─► LOBBY (bereit)
 - Der **erste Fehler** startet ein Fenster von `error_window_s` = 30 s.
 - Der **3. Fehler innerhalb dieses Fensters** löst eine Sperre von `lock_s` = 20 s aus (Eingabe auf dem eigenen Handy gesperrt, Countdown-Overlay).
 - Läuft das Fenster ohne 3. Fehler ab, beginnt der Zähler wieder bei 0. Nach einer Sperre beginnt der Zähler ebenfalls bei 0.
-- Sperren und Fehler geben **keine Schlucke**.
+- Sperren und Fehler geben **keine Shots**.
 
 ### 2.6 Linie beanspruchen, Aufdecken, Neutral
 - Eine Linie ist für Spieler P **vollständig**, wenn jede Zelle entweder Vorgabe, bereits aufgedeckt oder von P korrekt eingegeben ist.
 - **Beansprucht** wird eine Linie nur, wenn **P's eigene korrekte Eingabe** sie vollständig macht und die Linie noch nicht gesperrt ist. Sie wird in P's Farbe gesperrt, und ihre Ziffern werden **für alle aufgedeckt**.
-- Eine Eingabe kann **Zeile und Spalte gleichzeitig** abschliessen: Beide Linien gehören P (2 Linien, 2 Schlucke), aber es gibt **nur 1 Jagd**.
-- **Neutral:** Ist eine Linie allein durch Vorgaben + aufgedeckte Zellen vollständig (niemand hat sie durch eigene Eingabe abgeschlossen), wird sie **neutral** gesperrt (grau, keine Jagd, keine Schlucke). Wird nach jedem Aufdecken geprüft.
+- Eine Eingabe kann **Zeile und Spalte gleichzeitig** abschliessen: Beide Linien gehören P (2 Linien, 2 Shots), aber es gibt **nur 1 Jagd**.
+- **Neutral:** Ist eine Linie allein durch Vorgaben + aufgedeckte Zellen vollständig (niemand hat sie durch eigene Eingabe abgeschlossen), wird sie **neutral** gesperrt (grau, keine Jagd, keine Shots). Wird nach jedem Aufdecken geprüft.
 - Wird eine Linie für P nur durch Aufdecken vollständig (aber nicht global), passiert nichts. P kann sie nicht mehr beanspruchen («Pech gehabt»). Andere Spieler können sie weiterhin beanspruchen.
 - Zellen in gesperrten Linien sind für alle ausgefüllt und nicht mehr eingebbar.
+- **Farbe:** Eine gesperrte Linie zeigt durchgehend die Farbe ihres Lösers (neutral: grau) und wird nie überschrieben. Darstellung siehe §9.5.
 
 ### 2.7 Jagd
 - Beim Beanspruchen startet sofort eine Jagd (sofern noch Ballone in der Halle sind, siehe §2.8):
@@ -91,24 +92,26 @@ LOBBY ─► PROBERUNDE 4×4 (zählt nicht) ─► LOBBY (bereit)
 ### 2.8 Ballone & Spielende
 - In der Halle sind `balloons_total` = **35** Ballone (7 Spieler × 5).
 - **Jede gestartete Jagd** zählt einen Ballon aus der Halle (egal ob Erfolg oder Fehlschlag). TV zeigt «Ballone in der Halle: x».
-- Wird die **35. Jagd gestartet**, endet das Spiel **sofort**: keine Eingaben mehr, laufende Jagden abschliessen, letzte Pause (Schlucke), dann Kassensturz.
+- Wird die **35. Jagd gestartet**, endet das Spiel **sofort**: keine Eingaben mehr, laufende Jagden abschliessen, letzte Pause (Shots), dann Kassensturz.
 - **Zeitlimit:** Ein neues Sudoku darf nur starten, solange seit Start des ersten Haupt-Sudokus **weniger als `game_limit_s` = 1500 s (25 Min.)** vergangen sind (Pausen zählen mit). Ein Sudoku, das bei 24:59 startet, wird fertig gespielt.
 - Danach: letzte Pause, dann Kassensturz.
 
-### 2.9 Pause zwischen Sudokus (Schlucke)
+### 2.9 Pause zwischen Sudokus (Shots)
+> In der UI heisst es immer «Shot»/«Shots». Bezeichner im Code und in der Datenbank bleiben `sip`/`sips`.
+
 Zwei Teilphasen:
 
 **a) Verteilen** (`break_distribute`)
-- Jeder Spieler hat `sips_per_line` = 1 Schluck **pro in dieser Runde beanspruchter Linie** zu verteilen.
-- Er tippt auf Mitspieler (jedes Tippen = 1 Schluck). Alle an eine Person ist erlaubt. **An sich selbst ist verboten.**
-- Button **«Zufall»**: verteilt alle restlichen Schlucke, jeden einzeln an einen zufälligen Mitspieler (nie an sich selbst).
+- Jeder Spieler hat `sips_per_line` = 1 Shot **pro in dieser Runde beanspruchter Linie** zu verteilen.
+- Er tippt auf Mitspieler (jedes Tippen = 1 Shot). Alle an eine Person ist erlaubt. **An sich selbst ist verboten.**
+- Button **«Zufall»**: verteilt alle restlichen Shots, jeden einzeln an einen zufälligen Mitspieler (nie an sich selbst).
 - Wer nichts zu verteilen hat, sieht «Nichts zu verteilen – warte auf die anderen».
-- Nach `distribute_timeout_s` = 60 s werden restliche Schlucke automatisch per Zufall verteilt.
-- TV zeigt live, wer wem wie viele Schlucke gibt.
+- Nach `distribute_timeout_s` = 60 s werden restliche Shots automatisch per Zufall verteilt.
+- TV zeigt live, wer wem wie viele Shots gibt.
 
 **b) Trinken & bereit** (`break_drink`)
-- Jeder sieht: «Du musst X Schlucke trinken» plus Liste, von wem.
-- Ein Button **«Getrunken & bereit»** (auch bei 0 Schlucken).
+- Jeder sieht: «Du musst X Shots trinken» plus Liste, von wem.
+- Ein Button **«Getrunken & bereit»** (auch bei 0 Shots).
 - Sind alle bereit, startet das nächste Sudoku (oder der Kassensturz, siehe §2.8).
 - Hängt jemand: Nach `force_continue_after_s` = 120 s erscheint auf dem TV «Weiter erzwingen» (Host-PIN).
 
@@ -131,8 +134,8 @@ Zwei Teilphasen:
 - Beanspruchte Linien (gesamt / pro Runde), schnellste Linie (Zeit ab Rundenstart)
 - Jagden: gestartet / erfolgreich / Quote
 - Fehler gesamt, ausgelöste Sperren
-- Schlucke verteilt / erhalten (inkl. «Lieblingsopfer»: an wen am meisten verteilt)
-- Auszeichnungen: Linien-König, Jagd-Profi (beste Quote, min. 2 Jagden), Fehlerteufel, Schluck-Magnet (am meisten erhalten), Grosszügigster (am meisten verteilt)
+- Shots verteilt / erhalten (inkl. «Lieblingsopfer»: an wen am meisten verteilt)
+- Auszeichnungen: Linien-König, Jagd-Profi (beste Quote, min. 2 Jagden), Fehlerteufel, Shot-Magnet (am meisten erhalten), Grosszügigster (am meisten verteilt)
 
 ---
 
@@ -150,7 +153,7 @@ Zwei Teilphasen:
 
 | Thema | Entscheid |
 |---|---|
-| Frontend-Hosting | **GitHub Pages**, statisch, direkt aus `main` / Root. URL `https://<user>.github.io/sudoku-sturm/` |
+| Frontend-Hosting | **GitHub Pages**, statisch, direkt aus `main` / Root. URL `https://<user>.github.io/badoku-extreme/` |
 | Backend | **Supabase** (Postgres + Realtime). Temporär für diesen Anlass. Region: EU (Frankfurt). |
 | Spiellogik | **Komplett serverseitig in Postgres-Funktionen** (RPC, `SECURITY DEFINER`). Das Frontend ist ein reines Anzeige-/Eingabegerät. |
 | Frontend | Vanilla HTML/CSS/JS, ES-Module, kein Framework, kein Build. |
@@ -190,7 +193,7 @@ Zwei Teilphasen:
 lobby ──host_start_trial──► trial_running ──(alle Linien / Limit)──► trial_ending ──(Jagden fertig)──► lobby (trial_done = true)
 lobby ──host_start_main───► round_running
 round_running ──(18 Linien gesperrt | Rundenlimit | 35. Jagd gestartet)──► round_ending
-round_ending ──(keine aktive Jagd)──► break_distribute   (überspringen, wenn niemand Schlucke hat → break_drink)
+round_ending ──(keine aktive Jagd)──► break_distribute   (überspringen, wenn niemand Shots hat → break_drink)
 break_distribute ──(alle verteilt | Timeout → Zufall)──► break_drink
 break_drink ──(alle bereit | Host erzwingt)──► round_running   wenn hunts_started < 35 UND Spielzeit < 25 Min.
                                             └─► cashout          sonst
@@ -259,7 +262,7 @@ UNIQUE (game_id, name), UNIQUE (game_id, color).
 
 **`rounds`**: id, game_id, kind ('trial'|'main'|'tiebreak'), round_no, puzzle_id, size, givens text, revealed text (Vorgaben + aufgedeckte Zellen), started_at, deadline, ended_at.
 
-**`lines`**: id, round_id, game_id, line_type ('row'|'col'), idx int, status ('claimed'|'neutral'), player_id null, claimed_at, digits text. UNIQUE (round_id, line_type, idx).
+**`lines`**: id, round_id, game_id, line_type ('row'|'col'), idx int, status ('claimed'|'neutral'), player_id null, claimed_at, origin_cell int null (Zelle, deren Eingabe die Linie abgeschlossen hat; neutral: null), digits text. UNIQUE (round_id, line_type, idx).
 
 **`entries`**: round_id, player_id, cell int, digit int, entered_at. PK (round_id, player_id, cell). Nur korrekte Eingaben.
 
@@ -334,7 +337,7 @@ Alle Funktionen: `SECURITY DEFINER`, `SET search_path = public, extensions`, Rü
 | `host_start_main(p_code, p_pin)` | TV | Hauptspiel starten |
 | `enter_digit(p_code, p_token, p_cell int, p_digit int)` | Handy | Eingabe (§8.2) |
 | `hunt_press(p_code, p_token)` | Handy | «Ballon im Depot» |
-| `give_sip(p_code, p_token, p_target uuid)` | Handy | 1 Schluck verteilen |
+| `give_sip(p_code, p_token, p_target uuid)` | Handy | 1 Shot verteilen |
 | `give_sips_random(p_code, p_token)` | Handy | Rest zufällig verteilen |
 | `confirm_ready(p_code, p_token)` | Handy | «Getrunken & bereit» |
 | `host_force_continue(p_code, p_pin)` | TV | Pause erzwingen (erst nach `force_continue_after_s`) |
@@ -345,8 +348,8 @@ Alle Funktionen: `SECURITY DEFINER`, `SET search_path = public, extensions`, Rü
 ### 8.1 `get_state` – Inhalt
 - `server_now`, `game` (Phase, Version, Config, Zeiten, `hunts_started`, `balloons_left`, Spielzeit, Rundenzahl)
 - `round`: `kind`, `size`, `givens`, `revealed`, `started_at`, `deadline` (**nie die Lösung**)
-- `lines`: alle gesperrten Linien der Runde (Typ, Index, Status, Spieler)
-- `players` (öffentlich): id, Name, Farbe, Zähler, `ready`, `has_submitted_cash`, `locked_until`, aktive Jagd (Frist), Schlucke dieser Pause (zu verteilen/erhalten), `cash_cents` **nur ab Phase `tiebreak`/`results`**, `final_rank`, Tiebreak-Gruppe/-Fortschritt
+- `lines`: alle gesperrten Linien der Runde (Typ, Index, Status, Spieler, `claimed_at`, `origin_cell`)
+- `players` (öffentlich): id, Name, Farbe, Zähler, `ready`, `has_submitted_cash`, `locked_until`, aktive Jagd (Frist), Shots dieser Pause (zu verteilen/erhalten), `cash_cents` **nur ab Phase `tiebreak`/`results`**, `final_rank`, Tiebreak-Gruppe/-Fortschritt
 - `hunts_active`, `sip_transfers` der aktuellen Pause, `ticker` (letzte 20 Events)
 - `me` (nur mit gültigem Token): eigene Einträge der Runde, Fehlerzähler + Fensterstart, `locked_until`, aktive Jagd (`min_press_at`, `deadline`, Label), `sips_to_distribute`, `sips_to_drink` + Absender, `balloons_allowed`, `cash_cents`
 - `stats` (nur Phase `results`): siehe §2.12
@@ -361,7 +364,7 @@ Alle Funktionen: `SECURITY DEFINER`, `SET search_path = public, extensions`, Rü
 7. **Richtig:** Eintrag speichern. Bei `tiebreak`: Zähler/Zeit aktualisieren, bei vollständigem Raster `tiebreak_finished_at` setzen und Gruppe beenden → fertig.
 8. Zeile und Spalte der Zelle prüfen: nicht gesperrt UND für diesen Spieler vollständig → beansprucht.
 9. Falls beansprucht (1 oder 2 Linien):
-   - `lines` einfügen (Status `claimed`, Ziffern aus Lösung), `rounds.revealed` aktualisieren, Ticker-Event.
+   - `lines` einfügen (Status `claimed`, `origin_cell` = eingegebene Zelle, Ziffern aus Lösung), `rounds.revealed` aktualisieren, Ticker-Event.
    - Haupt-Sudoku: `lines_claimed += n`, `sips_to_distribute += n × sips_per_line`.
    - Jagd erzeugen, falls `hunts_started < balloons_total` (Haupt) bzw. immer (Probe, Kind `trial`, zählt nicht): `min_press_at`, `deadline` aus Config; `games.hunts_started++` und `players.hunts_started++` (nur Haupt).
    - Wurde damit die **35. Jagd** gestartet → Phase sofort `round_ending`.
@@ -384,7 +387,7 @@ Nur wenn alle Spieler `cash_submitted_at` gesetzt haben. Gruppen gleicher Beträ
 
 ### 9.1 Struktur
 ```
-sudoku-sturm/
+badoku-extreme/
 ├─ CLAUDE.md
 ├─ README.md                 Setup-Anleitung (Supabase, Pages, Seed)
 ├─ index.html                Startseite: «TV-Ansicht» / «Mitspielen»
@@ -405,16 +408,19 @@ sudoku-sturm/
 │  ├─ qr.js                  QR als SVG via vendor/qrcode.js
 │  ├─ tv.js                  TV-Steuerung, Tick-Schleife (1 s)
 │  └─ play.js                Spieler-Steuerung, Tick-Fallback (5 s)
+├─ mockups/                 klickbare Attrappe aller Bildschirme, abgenommene Vorlage
 ├─ vendor/
 │  ├─ supabase.js            fixierte Version, Versionskommentar am Dateianfang
 │  └─ qrcode.js
 ├─ supabase/
 │  ├─ migrations/
-│  │  ├─ 001_schema.sql
-│  │  ├─ 002_security.sql    RLS, revoke/grant
-│  │  ├─ 003_helpers.sql     Token/PIN, Linien-Helfer, Snapshot
-│  │  ├─ 004_game_rpc.sql    alle RPCs + tick
-│  │  └─ 005_realtime.sql    games in Publikation supabase_realtime
+│  │  ├─ 000_server_time.sql Smoke-Test
+│  │  ├─ 001_puzzles.sql     Rätsel-Pool
+│  │  ├─ 002_schema.sql
+│  │  ├─ 003_security.sql    RLS, revoke/grant
+│  │  ├─ 004_helpers.sql     Token/PIN, Linien-Helfer, Snapshot
+│  │  ├─ 005_game_rpc.sql    alle RPCs + tick
+│  │  └─ 006_realtime.sql    games in Publikation supabase_realtime
 │  ├─ tests/rules_test.sql   Szenario-Tests (raise exception bei Fehler)
 │  └─ seed/                  (gitignored) puzzles.sql
 ├─ tools/
@@ -425,7 +431,7 @@ sudoku-sturm/
 │  └─ bots.mjs
 └─ .gitignore                supabase/seed/, node_modules/, .env
 ```
-Alle Pfade **relativ** (GitHub Pages läuft unter `/sudoku-sturm/`).
+Alle Pfade **relativ** (GitHub Pages läuft unter `/badoku-extreme/`).
 
 ### 9.2 Spieleransicht (`play.html`), Mobile-first
 | Phase | Anzeige |
@@ -435,8 +441,8 @@ Alle Pfade **relativ** (GitHub Pages läuft unter `/sudoku-sturm/`).
 | Sudoku | Raster (füllt Bildschirmbreite), Zahlenblock 1–N unten, Zelle antippen → Zahl tippen. Vorgaben fett, eigene Eingaben in eigener Farbe, aufgedeckte Linien eingefärbt (Spielerfarbe bzw. grau). Fehler: Zelle rot aufblitzen + Vibration, 3 Fehlerpunkte sichtbar. Sperre: Overlay mit Countdown. Kopfzeile: Rundentimer, Ballone in der Halle, eigene Linien. |
 | Jagd | Vollbild grün, Text «ZEILE 4 GELÖST!», grosser Countdown, Button erst nach 10 s aktiv (Fortschritt), danach riesig. Erfolg ✔ / Zeit abgelaufen ✗, je 2 s, dann zurück. Ton + Vibration beim Start. |
 | Rundenende | «Runde beendet – warte auf laufende Jagden» |
-| Verteilen | «Du hast X Schlucke zu verteilen», grosse Kacheln pro Mitspieler (Farbe, Name, bereits erhalten), Tippen = +1, Button «Zufall», Rest-Zähler |
-| Trinken | «Du musst X Schlucke trinken» + Absender, Button «Getrunken & bereit» |
+| Verteilen | «Du hast X Shots zu verteilen», grosse Kacheln pro Mitspieler (Farbe, Name, bereits erhalten), Tippen = +1, Button «Zufall», Rest-Zähler |
+| Trinken | «Du musst X Shots trinken» + Absender, Button «Getrunken & bereit» |
 | Kassensturz | «Du darfst N Ballone platzen lassen», Betragseingabe (Dezimaltastatur, `inputmode="decimal"`, Komma und Punkt erlaubt), Senden, Ändern bis abgeschlossen |
 | Powersudoku | 6×6-Raster, falls in einer Gruppe; sonst «Zuschauen» |
 | Resultate | eigener Rang, Betrag, persönliche Statistik |
@@ -454,7 +460,7 @@ Grosse Touch-Ziele (min. 48 px), kein Zoom (`touch-action: manipulation`), keine
 | Powersudoku | Gruppen nebeneinander, Fortschrittsbalken pro Spieler, Countdown |
 | Resultate | Podest Top 3, Tabelle Rang 1–7, Auszeichnungen, Statistik |
 
-Gestaltung: dunkles Theme, eine klare Akzentfarbe, Spielerfarben als einziges «buntes» Element. Animationen kurz und deutlich (Linie gelöst: Linie leuchtet in Spielerfarbe auf). Joko-und-Klaas-Showcharakter, aber lesbar.
+Gestaltung: dunkles Theme, eine klare Akzentfarbe, Spielerfarben als einziges «buntes» Element. Animationen kurz und deutlich (Linie gelöst: siehe §9.5). Joko-und-Klaas-Showcharakter, aber lesbar.
 
 ### 9.4 Robustheit
 - Jede Ansicht ist zu jedem Zeitpunkt aus `get_state` vollständig rekonstruierbar (Neuladen = gleicher Stand).
@@ -463,12 +469,21 @@ Gestaltung: dunkles Theme, eine klare Akzentfarbe, Spielerfarben als einziges «
 - Offline/Fehler einer RPC → kurze Meldung, kein Absturz, nächster Snapshot korrigiert.
 - `localStorage`-Zugriffe immer in `try/catch`.
 
+### 9.5 Aufdecken einer Linie (in der Attrappe abgenommen, Vorlage `mockups/`)
+Gilt auf dem TV und auf allen Handys. Das Handy des Lösers zeigt stattdessen sofort den Jagd-Bildschirm.
+- **Ballon-Platzer:** Von `origin_cell` aus erscheint auf jeder bisher verdeckten Zelle der Linie nacheinander ein Ballon in Spielerfarbe, bläst sich auf und platzt (Ring, Splitter), darunter erscheint die Ziffer. Danach leuchtet die ganze Linie kurz auf.
+- **Name:** Der Name des Lösers blitzt in Spielerfarbe in der Mitte der Linie auf (ca. 1,5 s) und bleibt ganz im Raster.
+- **Neutrale Linien:** nur ruhiges Einblenden in Grau, kein Name, keine Ballone.
+- **Kreuzung:** Kreuzen sich zwei gelöste Linien verschiedener Besitzer, zeigt die Zelle beide Farben: Zeilenfarbe links/rechts, Spaltenfarbe oben/unten. So läuft jede Linie sichtbar durch.
+- **Robustheit:** Der Effekt wird aus `claimed_at` und Serverzeit berechnet. Ein neuer Snapshot setzt ihn fort, statt ihn neu zu starten. Nach Neuladen läuft er nur, wenn die Linie gerade erst gelöst wurde.
+- `prefers-reduced-motion`: nur Einblenden und Name.
+
 ---
 
 ## 10. Tests
 
 1. **Rätsel:** `node --test tools/` – Generator-Eigenschaften (§7).
-2. **SQL-Szenarien:** `supabase/tests/rules_test.sql`, im SQL-Editor ausführbar, räumt danach auf. Deckt ab: Beitritt (Name/Farbe doppelt), Fehlerfenster inkl. Zurücksetzen nach 30 s und Sperre, Beanspruchen, gleichzeitige Zeile + Spalte (1 Jagd, 2 Linien), Neutral-Regel, «Pech gehabt»-Fall, Jagd zu früh / rechtzeitig / zu spät (Zeitstempel im Test direkt manipulieren), 35-Jagden-Ende, Zeitlimit-Entscheid, Schlucke (nicht an sich selbst, Zufall), Kassensturz-Sichtbarkeit, Tiebreak-Ranking inkl. Los.
+2. **SQL-Szenarien:** `supabase/tests/rules_test.sql`, im SQL-Editor ausführbar, räumt danach auf. Deckt ab: Beitritt (Name/Farbe doppelt), Fehlerfenster inkl. Zurücksetzen nach 30 s und Sperre, Beanspruchen, gleichzeitige Zeile + Spalte (1 Jagd, 2 Linien), Neutral-Regel, «Pech gehabt»-Fall, Jagd zu früh / rechtzeitig / zu spät (Zeitstempel im Test direkt manipulieren), 35-Jagden-Ende, Zeitlimit-Entscheid, Shots (nicht an sich selbst, Zufall), Kassensturz-Sichtbarkeit, Tiebreak-Ranking inkl. Los.
 3. **Bot-Simulation:** `node tools/bots.mjs --players 7 --speed normal` erstellt ein Spiel mit verkürzter Config (optional), lässt 7 Bots mit realistischem Tempo, Fehlerquote und Jagd-Erfolgsquote spielen, ruft `tick` auf und gibt am Ende aus: Dauer pro Runde, Linien pro Spieler, Jagden, Spielverlauf. Ziel: Vorgaben-Anzahl so justieren, dass eine Runde ca. 4–6 Min. dauert.
 4. **Generalprobe:** 3–4 echte Handys (iOS + Android), Wake Lock 2 Min. prüfen.
 

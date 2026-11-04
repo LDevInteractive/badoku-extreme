@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="de-CH">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0c0d12">
+  <title>Badoku-Extreme Attrappe</title>
+  <link rel="stylesheet" href="../css/base.css">
+  <link rel="stylesheet" href="mock.css">
+</head>
+<body>
+  <header class="bar" id="bar">
+    <div class="bar-top">
+      <span class="bar-title">Badoku<em>-Extreme</em> · Attrappe</span>
+      <button class="btn-link" id="bar-toggle" data-act="togglebar" type="button"></button>
+      <div class="seg" id="view" role="group" aria-label="Ansicht"></div>
+    </div>
+    <nav class="pills" id="phases" aria-label="Spielphase"></nav>
+    <nav class="pills pills-sub" id="subs" aria-label="Variante"></nav>
+    <nav class="pills pills-fx" id="fx" aria-label="Effekt beim Aufdecken"></nav>
+    <p class="note" id="note"></p>
+  </header>
+  <main class="stage" id="stage">
+    <section class="tv-col" aria-label="TV-Ansicht">
+      <p class="label col-label">TV 1920×1080</p>
+      <div class="tv-wrap" id="tv-wrap"><div class="tv" id="tv"></div></div>
+    </section>
+    <section class="phone-col" aria-label="Handy-Ansicht">
+      <p class="label col-label">Handy von Luca</p>
+      <div class="phone" id="phone"></div>
+    </section>
+  </main>
+  <script src="mock-data.js"></script>
+  <script src="mock.js"></script>
+</body>
+</html>

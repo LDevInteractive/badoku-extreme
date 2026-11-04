@@ -3,7 +3,7 @@
 
 import { rpc } from './api.js';
 import { startSync } from './sync.js';
-import { updateCountdowns } from './clock.js';
+import { serverNow, updateCountdowns } from './clock.js';
 import { gridHtml } from './grid.js';
 import { qrSvg } from './qr.js';
 import { $, esc, setConn, storeGet, storeRemove, storeSet, withBusy } from './util.js';
@@ -13,7 +13,9 @@ const STAGE_H = 1080;
 const TICK_MS = 1000;
 const COUNTDOWN_MS = 250;
 const CODE_KEY = 'badoku.tv.code';
+const pinKey = (gameCode) => `badoku.tv.pin.${gameCode}`;
 const TICKER_LINES = 5;
+const HUNTS_BIG = 3;
 
 const ERRORS = {
   bad_pin: 'Die PIN muss 4 bis 6 Ziffern haben.',
@@ -30,7 +32,7 @@ let sync = null;
 let tickTimer = null;
 let countdownTimer = null;
 let code = null;
-let hostPin = null; // kept in memory only (CLAUDE.md 9.3)
+let hostPin = null; // remembered per game on this TV, so it is asked only once
 let qrFor = null;
 let qrMarkup = '';
 let difficulty = 'leicht';
@@ -104,7 +106,7 @@ async function onCreate(e) {
     try {
       const r = await rpc('create_game', { p_pin: pin, p_config: { difficulty } });
       if (!r.ok) return startError(r.reason);
-      hostPin = pin;
+      storeSet(pinKey(r.code), pin);
       openGame(r.code);
     } catch (err) {
       console.warn(err);
@@ -121,7 +123,7 @@ async function onConnect(e) {
     try {
       const r = await rpc('host_check', { p_code: wanted, p_pin: pin });
       if (!r.ok) return startError(r.reason === 'bad_pin' ? 'wrong_pin' : r.reason);
-      hostPin = pin;
+      storeSet(pinKey(wanted), pin);
       openGame(wanted);
     } catch (err) {
       console.warn(err);
@@ -133,6 +135,8 @@ async function onConnect(e) {
 // ---------- Game ----------
 function openGame(nextCode) {
   code = nextCode;
+  hostPin = storeGet(pinKey(code));
+  screen = null;
   storeSet(CODE_KEY, code);
   $('conn').hidden = false;
   setConn('warn');
@@ -145,10 +149,14 @@ function openGame(nextCode) {
   tickTimer = setInterval(() => {
     rpc('tick', { p_code: code }).catch((e) => console.warn('tick failed', e));
   }, TICK_MS);
-  countdownTimer = setInterval(() => updateCountdowns($('tv')), COUNTDOWN_MS);
+  countdownTimer = setInterval(() => {
+    updateCountdowns($('tv'));
+    updateHuntBars();
+  }, COUNTDOWN_MS);
 }
 
 function leaveGame(message = '') {
+  if (code) storeRemove(pinKey(code));
   sync?.stop();
   clearInterval(tickTimer);
   clearInterval(countdownTimer);
@@ -224,11 +232,13 @@ async function onStartMain(e) {
     const r = await rpc('host_start_main', { p_code: code, p_pin: pin });
     if (r.ok) {
       hostPin = pin;
+      storeSet(pinKey(code), pin);
       await sync.refresh();
       return;
     }
     if (r.reason === 'bad_pin') {
       hostPin = null;
+      storeRemove(pinKey(code));
       $('start-pin').hidden = false;
       fail('wrong_pin');
     } else if (r.reason !== 'wrong_phase') {
@@ -252,7 +262,31 @@ function tickerLine(event) {
   if (type === 'line_neutral') return `${payload.label} neutral aufgedeckt`;
   if (type === 'round_limit') return 'Zeit abgelaufen: offene Linien aufgedeckt';
   if (type === 'player_locked') return `${payload.name} ist ${payload.seconds} s gesperrt`;
+  if (type === 'hunt_success') return `Jagd von ${payload.name} erfolgreich`;
+  if (type === 'hunt_failed') return `Jagd von ${payload.name}: Zeit abgelaufen`;
+  if (type === 'balloons_empty') return 'Letzter Ballon unterwegs: Das Spiel endet';
   return null;
+}
+
+// Up to three hunts get big bars, more share two columns so that seven still fit.
+function huntsHtml({ hunts_active: hunts, players }) {
+  if (!hunts.length) return '<p class="hunts-empty">Gerade keine Jagd.</p>';
+  const byId = new Map(players.map((p) => [p.id, p]));
+  return `<div class="hunts ${hunts.length <= HUNTS_BIG ? 'few' : ''}">${hunts.map((h) => {
+    const p = byId.get(h.player_id);
+    const start = new Date(h.started_at).getTime();
+    const end = new Date(h.deadline).getTime();
+    return `<div class="hunt-row" style="--c:${esc(p.color)}"><i class="fill" data-bar-start="${start}" data-bar-end="${end}"></i><span class="hl">${esc(p.name)} · ${esc(h.lines_label)}</span><span><span data-cd="${end}" data-fmt="s"></span> s</span></div>`;
+  }).join('')}</div>`;
+}
+
+function updateHuntBars() {
+  const now = serverNow();
+  document.querySelectorAll('[data-bar-start]').forEach((el) => {
+    const start = Number(el.dataset.barStart);
+    const end = Number(el.dataset.barEnd);
+    el.style.width = `${Math.max(0, Math.min(100, (100 * (end - now)) / (end - start)))}%`;
+  });
 }
 
 function renderRound(state) {
@@ -281,7 +315,7 @@ function renderRound(state) {
       <div class="tv-panel tv-stat"><span class="tv-label">Runde ${esc(round.round_no)}</span><b>${roundValue}</b></div>
       <div class="tv-panel tv-stat hot"><span class="tv-label">Ballone</span><b>${esc(game.balloons_left)}</b></div>
     </div>
-    <div class="tv-panel"><h2 class="tv-label">Jagden</h2><p class="hunts-empty">Gerade keine Jagd.</p></div>
+    <div class="tv-panel"><h2 class="tv-label tv-hunts-title">Jagden</h2>${huntsHtml(state)}</div>
     <div class="tv-panel"><div class="score">
       <span></span><span class="h" style="text-align:left">Spieler</span><span class="h">Linien</span><span class="h">Jagden ✓</span>
       ${players.map((p) => `<span class="sw" style="--c:${esc(p.color)}"></span><span>${esc(p.name)}</span><span class="n">${esc(p.lines_claimed)}</span><span class="n">${esc(p.hunts_success)}</span>`).join('')}
@@ -290,6 +324,7 @@ function renderRound(state) {
     ${ending ? '<button class="tv-leave" id="leave" type="button">Anderes Spiel</button>' : ''}`;
   if (ending) $('leave').addEventListener('click', () => leaveGame());
   updateCountdowns($('tv'));
+  updateHuntBars();
 }
 
 function renderOther({ game }) {

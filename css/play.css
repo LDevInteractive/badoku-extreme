@@ -54,3 +54,15 @@ body { overflow: hidden; }
 .overlay { position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s-4); padding: var(--s-5); text-align: center; }
 .ov-lock { background: rgba(12, 13, 18, 0.93); }
 .ph-big { font-size: 112px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; color: var(--danger); }
+
+/* ---------- Hunt ---------- */
+.ov-hunt { background: #0f7a45; color: #fff; }
+.ov-hunt .ph-title { font-size: 34px; font-weight: 900; text-transform: uppercase; }
+.ov-hunt .cd { font-size: 112px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
+.ov-hunt .rule, .ov-fail .rule { font-size: 15px; opacity: 0.9; }
+.ov-fail { background: #8e1f24; color: #fff; }
+.ov-mark { font-size: 120px; font-weight: 900; line-height: 1; }
+.hunt-btn { position: relative; width: 100%; min-height: 148px; border-radius: var(--r-3); border: 0; overflow: hidden; background: rgba(255, 255, 255, 0.16); color: rgba(255, 255, 255, 0.75); font-size: 28px; font-weight: 900; line-height: 1.1; }
+.hunt-btn .fill { position: absolute; inset: 0 auto 0 0; background: rgba(255, 255, 255, 0.2); }
+.hunt-btn span { position: relative; }
+.hunt-btn.ready { background: var(--accent); color: var(--accent-ink); cursor: pointer; font-size: 36px; box-shadow: 0 0 40px var(--accent-glow); }

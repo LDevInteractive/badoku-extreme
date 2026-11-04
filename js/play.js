@@ -2,6 +2,7 @@
 // stays on this device; a reload finds the player again through get_state.
 
 import { ApiError, rpc } from './api.js';
+import { HUNT_RESULT_MS, HUNT_VIBRATE } from './config.js';
 import { startSync } from './sync.js';
 import { msUntil, serverNow, updateCountdowns } from './clock.js';
 import { gridHtml, isFxRunning } from './grid.js';
@@ -47,6 +48,14 @@ let netMessage = '';
 let optimisticRound = null;
 const optimistic = new Map(); // correct entries the next snapshot will confirm
 
+// Hunt state that only lives on this device. Answers of the server show at once; these
+// keep them in place until a snapshot that is new enough confirms them.
+let localHunt = null;
+let localResult = null;
+let pressBusy = false;
+let vibratedFor = null;
+let lateTickFor = null;
+
 // ---------- Connection to one game ----------
 function connect(code) {
   if (syncedCode === code) return;
@@ -85,9 +94,26 @@ function onGameMissing(code) {
   $('join-err').textContent = ERRORS.not_found;
 }
 
+const sameTime = (a, b) => new Date(a).getTime() === new Date(b).getTime();
+
+// A snapshot that was on its way while the hunt started or ended must not undo that.
+function reconcileHunt(me) {
+  if (localResult) {
+    if (me.hunt && sameTime(me.hunt.started_at, localResult.started_at)) me.hunt = null;
+    if (me.last_hunt && sameTime(me.last_hunt.started_at, localResult.started_at)) localResult = null;
+    else me.last_hunt = localResult;
+  }
+  if (localHunt) {
+    const over = me.last_hunt && new Date(me.last_hunt.started_at) >= new Date(localHunt.started_at);
+    if (me.hunt || over) localHunt = null;
+    else me.hunt = localHunt;
+  }
+}
+
 function onState(state) {
   lastState = state;
   if (state.me) {
+    reconcileHunt(state.me);
     drawPlayer(state);
     return;
   }
@@ -107,7 +133,9 @@ function onState(state) {
 function drawPlayer(state) {
   armWakeLock();
   const { phase } = state.game;
-  if (phase === 'lobby') renderLobby(state);
+  const hunt = huntView(state.me);
+  if (hunt) renderHunt(hunt);
+  else if (phase === 'lobby') renderLobby(state);
   else if (state.round && phase === 'round_running') renderRound(state);
   // The last line's effect still plays out before the screen changes.
   else if (state.round && phase === 'round_ending') (isFxRunning(state) ? renderRound(state) : renderEnded(state));
@@ -307,6 +335,11 @@ async function onDigitTap(digit) {
     if (r.ok && r.result === 'correct') {
       optimistic.set(cell, digit);
       sel = -1;
+      if (r.hunt) {
+        localHunt = r.hunt;
+        me.hunt = r.hunt;
+        sync?.refresh();
+      }
     } else if (r.ok && r.result === 'wrong') {
       flash = cell;
       setTimeout(() => {
@@ -329,6 +362,81 @@ async function onDigitTap(digit) {
     showNetMessage();
   } finally {
     busy = false;
+  }
+  redraw();
+}
+
+// ---------- Hunt ----------
+function huntView(me) {
+  if (me.hunt) {
+    return msUntil(me.hunt.deadline) > 0 ? { kind: 'active', hunt: me.hunt } : { kind: 'failed', key: me.hunt.started_at };
+  }
+  const last = me.last_hunt;
+  if (last && serverNow() - new Date(last.ended_at).getTime() < HUNT_RESULT_MS) {
+    return { kind: last.status === 'success' ? 'success' : 'failed', key: last.started_at };
+  }
+  return null;
+}
+
+const ms = (time) => new Date(time).getTime();
+
+function renderHunt(view) {
+  if (view.kind === 'active') {
+    const { hunt } = view;
+    const drawn = draw('hunt', `active|${hunt.started_at}`, () => `<div class="overlay ov-hunt">
+      <h1 class="ph-title">${esc(hunt.lines_label)} gelöst!</h1>
+      <div class="cd"><span data-cd="${ms(hunt.deadline)}" data-fmt="s"></span></div>
+      <p class="rule" id="hunt-rule">Handy liegen lassen. Ballon holen. Ab ins Depot.</p>
+      <button class="hunt-btn" id="hunt-btn" data-press type="button" disabled><i class="fill"></i><span>BALLON IM DEPOT</span></button>
+    </div>`);
+    if (drawn) updateCountdowns($('phone'));
+    if (vibratedFor !== hunt.started_at) {
+      vibratedFor = hunt.started_at;
+      if (serverNow() - ms(hunt.started_at) < HUNT_RESULT_MS) navigator.vibrate?.(HUNT_VIBRATE);
+    }
+    const span = ms(hunt.min_press_at) - ms(hunt.started_at);
+    const waited = serverNow() - ms(hunt.started_at);
+    const ready = waited >= span;
+    const btn = $('hunt-btn');
+    btn.disabled = !ready;
+    btn.classList.toggle('ready', ready);
+    btn.querySelector('.fill').style.width = ready ? '0' : `${Math.min(100, (100 * waited) / span)}%`;
+    return;
+  }
+  if (view.kind === 'success') {
+    draw('hunt', `success|${view.key}`, () => `<div class="overlay ov-hunt"><div class="ov-mark">✔</div><h1 class="ph-title">Ballon zählt!</h1><p class="rule">Du darfst beim Kassensturz einen Ballon mehr platzen lassen.</p></div>`);
+    return;
+  }
+  draw('hunt', `failed|${view.key}`, () => `<div class="overlay ov-fail"><div class="ov-mark">✗</div><h1 class="ph-title">Zeit abgelaufen</h1><p class="rule">Ein mitgebrachter Ballon darf ins Depot, zählt aber nicht.</p></div>`);
+  // The clock of this phone says it is over: ask the server to close it now.
+  if (lastState.me.hunt && lateTickFor !== view.key) {
+    lateTickFor = view.key;
+    rpc('tick', { p_code: syncedCode }).then(() => sync?.refresh()).catch((e) => console.warn('tick failed', e));
+  }
+}
+
+async function onPress() {
+  const hunt = lastState?.me?.hunt;
+  if (pressBusy || !hunt) return;
+  pressBusy = true;
+  try {
+    const r = await rpc('hunt_press', { p_code: syncedCode, p_token: token });
+    const { me } = lastState;
+    if (r.ok) {
+      localHunt = null;
+      localResult = { status: 'success', started_at: hunt.started_at, ended_at: new Date(serverNow()).toISOString() };
+      me.hunt = null;
+      me.last_hunt = localResult;
+    } else if (r.reason === 'no_hunt') {
+      localHunt = null;
+    }
+    sync?.refresh();
+  } catch (e) {
+    console.warn(e);
+    const rule = $('hunt-rule');
+    if (rule) rule.textContent = ERRORS.network;
+  } finally {
+    pressBusy = false;
   }
   redraw();
 }
@@ -364,7 +472,11 @@ $('phone').addEventListener('click', (e) => {
     return;
   }
   const digit = e.target.closest('[data-digit]');
-  if (digit) onDigitTap(Number(digit.dataset.digit));
+  if (digit) {
+    onDigitTap(Number(digit.dataset.digit));
+    return;
+  }
+  if (e.target.closest('[data-press]')) onPress();
 });
 
 // Time passes without a new snapshot: countdowns, lock end, error window, end of an effect.

@@ -78,3 +78,14 @@ body { overflow: hidden; background: #07080b; touch-action: auto; }
 .tv-side .tv-leave { position: static; align-self: flex-end; padding: 0 8px; }
 .tv-start-pin { width: 220px; }
 .tv .tv-start-pin.input { font-size: 34px; min-height: 80px; }
+
+/* ---------- Hunts ---------- */
+.tv .tv-hunts-title { margin-bottom: 10px; }
+.hunts { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 46px; gap: 8px; min-height: 208px; align-content: start; }
+.hunts.few { grid-template-columns: 1fr; grid-auto-rows: 64px; }
+.hunts.few .hunt-row { height: 64px; font-size: 32px; padding: 0 18px; }
+.hunt-row { position: relative; display: flex; justify-content: space-between; align-items: center; gap: 8px; height: 46px; padding: 0 12px; border-radius: var(--r-1); overflow: hidden; background: var(--bg-elev-2); font-size: 23px; font-weight: 800; color: #fff; }
+.hunt-row .fill { position: absolute; inset: 0 auto 0 0; background: var(--c); }
+.hunt-row .hl { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.hunt-row span { position: relative; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.hunts-empty { min-height: 208px; }

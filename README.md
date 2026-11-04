@@ -36,7 +36,8 @@ Reihenfolge** einfügen und ausführen (eine Datei pro Lauf):
 | `005_game_rpc.sql` | RPCs der Lobby: `create_game`, `host_check`, `join_game`, `get_state`, `tick` |
 | `006_realtime.sql` | `games` in die Publikation `supabase_realtime` |
 | `007_round_rpc.sql` | Sudoku-Runde: `host_start_main`, `enter_digit`, Rundenlimit in `tick` |
-| `008_…` | folgen mit den nächsten Meilensteinen |
+| `008_hunt_rpc.sql` | Jagd: `hunt_press`, Erzeugung in `enter_digit`, Fristablauf, Ende bei der letzten Jagd |
+| `009_…` | folgen mit den nächsten Meilensteinen |
 
 ### 3. Frontend konfigurieren
 

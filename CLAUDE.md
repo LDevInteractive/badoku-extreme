@@ -421,7 +421,8 @@ badoku-extreme/
 │  │  ├─ 004_helpers.sql     Token/PIN, Linien-Helfer, Snapshot
 │  │  ├─ 005_game_rpc.sql    RPCs der Lobby + tick
 │  │  ├─ 006_realtime.sql    games in Publikation supabase_realtime
-│  │  └─ 007_round_rpc.sql   Sudoku-Runde: host_start_main, enter_digit, Rundenlimit
+│  │  ├─ 007_round_rpc.sql   Sudoku-Runde: host_start_main, enter_digit, Rundenlimit
+│  │  └─ 008_hunt_rpc.sql    Jagd: hunt_press, Fristablauf, Ende bei der letzten Jagd
 │  ├─ tests/rules_test.sql   Szenario-Tests (raise exception bei Fehler)
 │  └─ seed/                  (gitignored) puzzles.sql
 ├─ tools/
@@ -454,7 +455,7 @@ Grosse Touch-Ziele (min. 48 px), kein Zoom (`touch-action: manipulation`), keine
 | Phase | Anzeige |
 |---|---|
 | Start | «Neues Spiel» (PIN setzen, Schwierigkeit wählen) oder «Verbinden» (Code + PIN) |
-| Lobby | Riesiger QR-Code + Code, Spieler mit Farben, Buttons «Proberunde» / «Hauptspiel starten» (PIN in Sitzung merken, nur im Speicher) |
+| Lobby | Riesiger QR-Code + Code, Spieler mit Farben, Buttons «Proberunde» / «Hauptspiel starten». Die PIN wird nur beim Erstellen oder Verbinden eingegeben, der TV merkt sie sich pro Spiel im `localStorage`, «Anderes Spiel» löscht sie. |
 | Runde | Grosses Raster: nur Vorgaben + aufgedeckte Linien (farbig/grau). Seitenleiste: Spieltimer (25:00 ab Hauptstart), Rundentimer (8:00), **Ballone in der Halle**, laufende Jagden mit Countdown-Balken in Spielerfarbe, Scoreboard (Linien, erfolgreiche Jagden), Ticker |
 | Pause | Matrix/Liste «wer gibt wem», Status pro Spieler (verteilt ✓ / bereit ✓), nach 120 s Button «Weiter erzwingen» |
 | Kassensturz | Pro Spieler «darf N Ballone platzen lassen» + Eingabestatus ✓, Button «Kassensturz abschliessen» (aktiv, wenn alle eingegeben haben), danach Hochzähl-Animation und Summe |

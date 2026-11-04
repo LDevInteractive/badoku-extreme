@@ -6,7 +6,11 @@
 export const SUPABASE_URL = 'https://jcdfuixhottekfwktmis.supabase.co';
 export const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_E_QoyQG9Ekkmch8AZH0YUw_VMyAQg5T';
 
-export const APP_VERSION = '0.3.0-m3';
+export const APP_VERSION = '0.4.0-m4';
+
+// Hunt screen on the phone (CLAUDE.md section 9.2): how long the outcome stays, vibration at the start.
+export const HUNT_RESULT_MS = 2000;
+export const HUNT_VIBRATE = [250, 120, 250];
 
 // Line reveal effect, all times in ms (CLAUDE.md section 9.5). step = delay per cell
 // away from the completing cell, lead = time until the first balloon pops, cell = one

@@ -29,7 +29,8 @@ Reihenfolge** einfügen und ausführen (eine Datei pro Lauf):
 | Datei | Inhalt |
 |---|---|
 | `000_server_time.sql` | Smoke-Test-Funktion `server_time()` |
-| `001_schema.sql` … | folgen mit den nächsten Meilensteinen |
+| `001_puzzles.sql` | Tabellen `puzzles` und `puzzle_solutions` (kein Client-Zugriff) |
+| `002_…` | folgen mit den nächsten Meilensteinen |
 
 ### 3. Frontend konfigurieren
 
@@ -52,14 +53,22 @@ Zugriff ausschliesslich über RPC-Funktionen geschützt.
 4. Optional eigene Domain (`spiel.mebongs.ch`): CNAME beim DNS-Anbieter auf `ldevinteractive.github.io`,
    in den Pages-Einstellungen eintragen, «Enforce HTTPS» aktivieren.
 
-### 5. Rätsel-Pool laden (ab Meilenstein M1)
+### 5. Rätsel-Pool laden
 
 ```
-node tools/generate-puzzles.mjs
+node tools/generate-puzzles.mjs --seed 20261104
 ```
 
-erzeugt `supabase/seed/puzzles.sql`. Diese Datei enthält die **Lösungen** und ist deshalb in
-`.gitignore`. Inhalt im SQL Editor ausführen.
+erzeugt `supabase/seed/puzzles.sql` (30 × 9×9 leicht, 15 × 9×9 mittel, 10 × 6×6, 10 × 4×4).
+Diese Datei enthält die **Lösungen** und ist deshalb in `.gitignore`. Inhalt im SQL Editor
+ausführen (Migration `001_puzzles.sql` muss vorher gelaufen sein). Die Datei ist idempotent,
+mehrfaches Ausführen erzeugt keine Duplikate. Kontrolle:
+
+```sql
+select size, difficulty, count(*) from public.puzzles group by 1, 2 order by 1, 2;
+```
+
+Tests des Generators: `node --test tools/*.test.mjs` (oder `npm test` in `tools/`).
 
 ## Smoke-Test
 

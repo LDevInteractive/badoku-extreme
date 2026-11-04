@@ -1,0 +1,11 @@
+{
+  "name": "badoku-extreme-tools",
+  "private": true,
+  "type": "module",
+  "description": "Local tools for Badoku-Extreme: puzzle generator, tests, bot simulation. Not shipped.",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test *.test.mjs",
+    "generate": "node generate-puzzles.mjs"
+  }
+}

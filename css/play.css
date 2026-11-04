@@ -1,0 +1,36 @@
+/* Badoku-Extreme - phone view, mobile first (CLAUDE.md section 9.2). */
+
+html, body { height: 100%; }
+body { overflow: hidden; }
+.conn[hidden] { display: none; }
+/* On the small screen only the dot, so it never collides with a title. */
+.conn { padding: var(--s-1); background: transparent; border: 0; backdrop-filter: none; }
+#conn-text { display: none; }
+
+.phone {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.ph-pad { flex: 1 1 auto; display: flex; flex-direction: column; gap: var(--s-4); min-height: 0; padding: var(--s-4); overflow-y: auto; }
+.ph-center { justify-content: center; align-items: center; text-align: center; }
+.ph-title { font-size: 26px; font-weight: 800; line-height: 1.15; text-wrap: balance; }
+
+.field { display: flex; flex-direction: column; gap: var(--s-1); }
+.colors { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s-2); }
+.color-btn { height: 56px; padding: 0 2px; border-radius: var(--r-2); border: 3px solid transparent; background: var(--c); cursor: pointer; font-size: 13px; font-weight: 800; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.color-btn[aria-pressed="true"] { border-color: #fff; box-shadow: 0 0 0 2px var(--accent); }
+.color-btn:disabled { opacity: 0.22; cursor: not-allowed; }
+.join-submit { margin-top: auto; }
+.form-err { min-height: 22px; color: var(--danger); font-weight: 700; text-align: center; }
+
+.plist { display: flex; flex-direction: column; gap: var(--s-2); width: 100%; margin: 0; padding: 0; list-style: none; text-align: left; }
+.plist li { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-3); border-radius: var(--r-1); background: var(--bg-elev); }
+.sw { flex: none; width: 16px; height: 16px; border-radius: 4px; background: var(--c); }
+.wake-ok { color: var(--ok); }

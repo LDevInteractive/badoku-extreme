@@ -1,0 +1,55 @@
+/* Badoku-Extreme - TV view. Laid out on a fixed 1920x1080 stage that js/tv.js
+   scales to the window, readable from 4 m (CLAUDE.md section 9.3). */
+
+html, body { height: 100%; }
+body { overflow: hidden; background: #07080b; touch-action: auto; }
+
+.tv {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1920px;
+  height: 1080px;
+  transform-origin: 0 0;
+  padding: 40px;
+  overflow: hidden;
+  background: var(--bg);
+  font-size: 28px;
+  line-height: 1.25;
+}
+
+.tv h1, .tv h2 { margin: 0; }
+.tv .btn { font-size: 30px; min-height: 80px; padding: 0 40px; border-radius: var(--r-3); }
+.tv .input { font-size: 44px; min-height: 84px; padding: 0 24px; border-radius: var(--r-2); }
+
+.tv-title { font-size: 48px; font-weight: 900; line-height: 1; letter-spacing: 0.01em; }
+.tv-label { font-size: 22px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint); }
+.tv-panel { display: flex; flex-direction: column; gap: 20px; min-height: 0; padding: 32px 36px; overflow: hidden; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--r-3); text-align: left; }
+.tv-center { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 32px; height: 100%; text-align: center; }
+
+.tv-start-brand { font-size: 140px; }
+.tv-start { display: flex; gap: 40px; width: 1400px; }
+.tv-start .tv-panel { flex: 1; }
+.tv-start form { display: contents; }
+.tv-field { display: flex; flex-direction: column; gap: 8px; }
+.tv-pin { letter-spacing: 0.3em; font-family: var(--font-mono); }
+.tv-seg { display: flex; gap: 16px; }
+.tv-seg .btn { flex: 1; }
+.tv-submit { margin-top: auto; }
+.tv-err { min-height: 36px; color: var(--danger); font-size: 26px; font-weight: 700; }
+
+.tv-lobby { display: grid; grid-template-columns: 720px 1fr; gap: 60px; height: 100%; align-items: center; }
+.qr { width: 640px; justify-self: center; padding: 28px; background: #fff; border-radius: var(--r-3); }
+.qr svg { width: 100%; height: auto; }
+.tv-lobby-side { display: flex; flex-direction: column; gap: 28px; }
+.code { font-size: 150px; font-weight: 900; letter-spacing: 0.08em; color: var(--accent); line-height: 1; font-variant-numeric: tabular-nums; }
+.tv-players { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.tv-player { display: flex; align-items: center; gap: 16px; min-height: 76px; padding: 0 22px; border-radius: var(--r-2); background: var(--c); color: var(--ink); font-size: 36px; font-weight: 800; }
+.tv-player.empty { background: transparent; border: 2px dashed var(--border-strong); color: var(--text-faint); font-weight: 500; font-size: 28px; }
+.tv-actions { display: flex; align-items: center; gap: 20px; }
+.tv-hint { font-size: 24px; color: var(--text-faint); }
+.tv-leave { position: absolute; left: 40px; bottom: 24px; padding: 8px; background: transparent; border: 0; color: var(--text-faint); font-size: 20px; text-decoration: underline; cursor: pointer; }
+
+/* Connection indicator stays readable on the scaled-down stage. */
+.conn { z-index: 60; }
+.conn[hidden] { display: none; }

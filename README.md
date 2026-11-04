@@ -30,7 +30,12 @@ Reihenfolge** einfügen und ausführen (eine Datei pro Lauf):
 |---|---|
 | `000_server_time.sql` | Smoke-Test-Funktion `server_time()` |
 | `001_puzzles.sql` | Tabellen `puzzles` und `puzzle_solutions` (kein Client-Zugriff) |
-| `002_…` | folgen mit den nächsten Meilensteinen |
+| `002_schema.sql` | Spieltabellen |
+| `003_security.sql` | RLS und Zugriffsrechte |
+| `004_helpers.sql` | interne Helfer (Standard-Config, Farben, Token, PIN, Snapshot) |
+| `005_game_rpc.sql` | RPCs der Lobby: `create_game`, `host_check`, `join_game`, `get_state`, `tick` |
+| `006_realtime.sql` | `games` in die Publikation `supabase_realtime` |
+| `007_…` | folgen mit den nächsten Meilensteinen |
 
 ### 3. Frontend konfigurieren
 

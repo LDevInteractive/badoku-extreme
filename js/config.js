@@ -6,4 +6,4 @@
 export const SUPABASE_URL = 'https://jcdfuixhottekfwktmis.supabase.co';
 export const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_E_QoyQG9Ekkmch8AZH0YUw_VMyAQg5T';
 
-export const APP_VERSION = '0.1.0-m0';
+export const APP_VERSION = '0.2.0-m2';

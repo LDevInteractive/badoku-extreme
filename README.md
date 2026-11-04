@@ -48,8 +48,8 @@ Zugriff ausschliesslich über RPC-Funktionen geschützt.
 1. Öffentliches Repo `badoku-extreme` anlegen, dieses Verzeichnis pushen (`main`).
 2. **Settings → Pages → Build and deployment:** Source «Deploy from a branch», Branch `main`,
    Ordner `/ (root)`. Speichern.
-3. Nach 1–2 Minuten ist die Seite unter `https://<user>.github.io/badoku-extreme/` erreichbar.
-4. Optional eigene Domain (`spiel.mebongs.ch`): CNAME beim DNS-Anbieter auf `<user>.github.io`,
+3. Nach 1–2 Minuten ist die Seite unter `https://ldevinteractive.github.io/badoku-extreme/` erreichbar.
+4. Optional eigene Domain (`spiel.mebongs.ch`): CNAME beim DNS-Anbieter auf `ldevinteractive.github.io`,
    in den Pages-Einstellungen eintragen, «Enforce HTTPS» aktivieren.
 
 ### 5. Rätsel-Pool laden (ab Meilenstein M1)

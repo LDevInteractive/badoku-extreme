@@ -6,7 +6,7 @@
 export const SUPABASE_URL = 'https://jcdfuixhottekfwktmis.supabase.co';
 export const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_E_QoyQG9Ekkmch8AZH0YUw_VMyAQg5T';
 
-export const APP_VERSION = '0.7.0-m7';
+export const APP_VERSION = '0.7.1-m7';
 
 // Cashout on the TV (CLAUDE.md section 2.10): how long the amounts count up.
 export const CASH_COUNT_MS = 2500;

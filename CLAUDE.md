@@ -62,6 +62,7 @@ LOBBY ─► PROBERUNDE 4×4 (zählt nicht) ─► LOBBY (bereit)
 - **Jede Eingabe wird sofort serverseitig geprüft.** Falsche Ziffern werden nicht übernommen.
 - Nur **Zeilen und Spalten** zählen als Linien (9 + 9 = 18). 3×3-Boxen zählen nicht.
 - **Rundenlimit:** `round_limit_s` = 480 s (8 Min.). Danach werden alle noch offenen Linien neutral aufgedeckt.
+- **Letzte Felder:** Sind nach dem Beanspruchen einer Linie nur noch `auto_reveal_open_cells` = 7 oder weniger Felder offen (für alle sichtbar, eigene Eingaben zählen nicht), wird der Rest sofort neutral aufgedeckt. So lohnt sich Zuwarten weniger: Am Schluss kostet eine Linie nur noch ein bis zwei Tipps, zahlt aber wie jede andere. Gilt nur im Haupt-Sudoku; 0 schaltet die Regel aus. Wird mit derselben Eingabe die letzte Jagd gestartet (§2.8), bleibt das Raster wie es ist.
 - Eine Runde endet, wenn **alle 18 Linien gesperrt** sind (beansprucht oder neutral) oder das Rundenlimit erreicht ist. Laufende Jagden werden immer zuerst abgeschlossen.
 - Das fertige Raster bleibt nach Rundenende mindestens `round_end_hold_s` = 5 s stehen, damit alle die Lösung sehen, auch wenn keine Jagd mehr läuft. TV und Handys zeigen es; wer auf eine laufende Jagd wartet, sieht auf dem Handy «Runde beendet – warte auf laufende Jagden».
 
@@ -75,7 +76,7 @@ LOBBY ─► PROBERUNDE 4×4 (zählt nicht) ─► LOBBY (bereit)
 - Eine Linie ist für Spieler P **vollständig**, wenn jede Zelle entweder Vorgabe, bereits aufgedeckt oder von P korrekt eingegeben ist.
 - **Beansprucht** wird eine Linie nur, wenn **P's eigene korrekte Eingabe** sie vollständig macht und die Linie noch nicht gesperrt ist. Sie wird in P's Farbe gesperrt, und ihre Ziffern werden **für alle aufgedeckt**.
 - Eine Eingabe kann **Zeile und Spalte gleichzeitig** abschliessen: Beide Linien gehören P (2 Linien, 2 Shots), aber es gibt **nur 1 Jagd**.
-- **Neutral:** Ist eine Linie allein durch Vorgaben + aufgedeckte Zellen vollständig (niemand hat sie durch eigene Eingabe abgeschlossen), wird sie **neutral** gesperrt (grau, keine Jagd, keine Shots). Wird nach jedem Aufdecken geprüft.
+- **Neutral:** Ist eine Linie allein durch Vorgaben + aufgedeckte Zellen vollständig (niemand hat sie durch eigene Eingabe abgeschlossen), wird sie **neutral** gesperrt (grau, keine Jagd, keine Shots). Wird nach jedem Aufdecken geprüft. Das gilt auch für alle Linien, die durch die Regel «Letzte Felder» (§2.4) vollständig werden.
 - Wird eine Linie für P nur durch Aufdecken vollständig (aber nicht global), passiert nichts. P kann sie nicht mehr beanspruchen («Pech gehabt»). Andere Spieler können sie weiterhin beanspruchen.
 - Zellen in gesperrten Linien sind für alle ausgefüllt und nicht mehr eingebbar.
 - **Farbe:** Eine gesperrte Linie zeigt durchgehend die Farbe ihres Lösers (neutral: grau) und wird nie überschrieben. Darstellung siehe §9.5.
@@ -293,6 +294,7 @@ Indizes auf alle `game_id`/`round_id`-Fremdschlüssel.
   "lock_s": 20,
   "round_limit_s": 480,
   "round_end_hold_s": 5,
+  "auto_reveal_open_cells": 7,
   "game_limit_s": 1500,
   "sips_per_line": 1,
   "distribute_timeout_s": 60,
@@ -376,7 +378,7 @@ Alle Funktionen: `SECURITY DEFINER`, `SET search_path = public, extensions`, Rü
    - Haupt-Sudoku: `lines_claimed += n`, `sips_to_distribute += n × sips_per_line`.
    - Jagd erzeugen, falls `hunts_started < balloons_total` (Haupt) bzw. immer (Probe, Kind `trial`, zählt nicht): `min_press_at`, `deadline` aus Config; `games.hunts_started++` und `players.hunts_started++` (nur Haupt).
    - Wurde damit die **35. Jagd** gestartet → Phase sofort `round_ending`.
-10. **Neutral-Prüfung:** Jede noch nicht gesperrte Linie, deren Zellen alle in `revealed` gefüllt sind → `lines` mit Status `neutral` einfügen.
+10. **Letzte Felder (§2.4), nur Haupt-Sudoku, nur nach einer Beanspruchung und wenn die Runde nicht schon durch die letzte Jagd beendet wurde:** höchstens `auto_reveal_open_cells` Zellen in `revealed` offen → `revealed` = Lösung, Ticker-Event. **Neutral-Prüfung:** Jede noch nicht gesperrte Linie, deren Zellen alle in `revealed` gefüllt sind → `lines` mit Status `neutral` einfügen.
 11. Alle 2N Linien gesperrt → Phase `round_ending`/`trial_ending`.
 12. `version++`. Rückgabe `{ok:true, result:'correct', claimed:[…], hunt:{…}|null}`.
 
@@ -435,7 +437,8 @@ badoku-extreme/
 │  │  ├─ 009_break_rpc.sql   Pausen: Shots verteilen, Zufall, Trinken, bereit, erzwingen
 │  │  ├─ 010_round_end_hold.sql  Fertiges Raster bleibt am Rundenende sichtbar
 │  │  ├─ 011_trial_rpc.sql   Proberunde: host_start_trial, finish_trial, zurück in die Lobby
-│  │  └─ 012_cashout_rpc.sql Kassensturz, Powersudoku, Rangliste, Statistik
+│  │  ├─ 012_cashout_rpc.sql Kassensturz, Powersudoku, Rangliste, Statistik
+│  │  └─ 013_auto_reveal.sql Die letzten Felder einer Runde füllen sich von selbst
 │  ├─ tests/rules_test.sql   Szenario-Tests (raise exception bei Fehler)
 │  └─ seed/                  (gitignored) puzzles.sql
 ├─ tools/

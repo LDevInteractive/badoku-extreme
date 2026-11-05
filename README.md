@@ -41,7 +41,8 @@ Reihenfolge** einfügen und ausführen (eine Datei pro Lauf):
 | `010_round_end_hold.sql` | Fertiges Raster bleibt am Rundenende mindestens `round_end_hold_s` sichtbar |
 | `011_trial_rpc.sql` | Proberunde 4×4: Start, Rückkehr in die Lobby, nichts davon zählt |
 | `012_cashout_rpc.sql` | Kassensturz, Powersudoku 6×6, Rangliste, Statistik |
-| `013_…` | folgen mit den nächsten Meilensteinen |
+| `013_auto_reveal.sql` | Die letzten Felder einer Runde füllen sich von selbst |
+| `014_…` | folgen mit den nächsten Meilensteinen |
 
 ### 3. Frontend konfigurieren
 

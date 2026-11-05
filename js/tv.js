@@ -295,6 +295,7 @@ function tickerLine(event) {
   if (type === 'line_claimed') return `${payload.name} löst ${payload.label}`;
   if (type === 'line_neutral') return `${payload.label} neutral aufgedeckt`;
   if (type === 'round_limit') return 'Zeit abgelaufen: offene Linien aufgedeckt';
+  if (type === 'auto_reveal') return `Nur noch ${payload.cells} ${payload.cells === 1 ? 'Feld' : 'Felder'} offen: Rest aufgedeckt`;
   if (type === 'player_locked') return `${payload.name} ist ${payload.seconds} s gesperrt`;
   if (type === 'hunt_success') return `Jagd von ${payload.name} erfolgreich`;
   if (type === 'hunt_failed') return `Jagd von ${payload.name}: Zeit abgelaufen`;

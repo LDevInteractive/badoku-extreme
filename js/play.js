@@ -105,6 +105,7 @@ function onGameMissing(code) {
 }
 
 const sameTime = (a, b) => new Date(a).getTime() === new Date(b).getTime();
+const isRunning = (phase) => phase === 'round_running' || phase === 'trial_running';
 
 // A snapshot that was on its way while the hunt started or ended must not undo that.
 function reconcileHunt(me) {
@@ -144,13 +145,14 @@ function drawPlayer(state) {
   armWakeLock();
   const { phase } = state.game;
   const hunt = huntView(state.me);
+  const ending = phase === 'round_ending' || phase === 'trial_ending';
   if (hunt) renderHunt(hunt);
   else if (phase === 'lobby') renderLobby(state);
-  else if (state.round && phase === 'round_running') renderRound(state);
+  else if (state.round && isRunning(phase)) renderRound(state);
   // The finished grid stays until the break: nobody is hunting, or the last effect still plays out.
-  else if (state.round && phase === 'round_ending' && (!state.hunts_active.length || isFxRunning(state))) renderRound(state);
+  else if (state.round && ending && (!state.hunts_active.length || isFxRunning(state))) renderRound(state);
   else if (state.round && (phase === 'break_distribute' || phase === 'break_drink') && isFxRunning(state)) renderRound(state);
-  else if (phase === 'round_ending') renderEnded(state);
+  else if (ending) renderEnded(state);
   else if (phase === 'break_distribute') renderDistribute(state);
   else if (phase === 'break_drink') renderDrink(state);
   else renderOther(state);
@@ -252,10 +254,10 @@ async function onJoin(e) {
 }
 
 // ---------- Lobby ----------
-function renderLobby({ me, players }) {
+function renderLobby({ me, players, game }) {
   const active = wakelock.isActive();
-  draw('lobby', `${active}|${players.map((p) => p.id).join()}`, () => `<div class="ph-pad">
-    <h1 class="ph-title">Warte auf den Start</h1>
+  draw('lobby', `${active}|${game.trial_done}|${players.map((p) => p.id).join()}`, () => `<div class="ph-pad">
+    <h1 class="ph-title">${game.trial_done ? 'Proberunde geschafft. Warte auf das Hauptspiel.' : 'Warte auf den Start'}</h1>
     ${active
       ? '<p class="small wake-ok">✓ Der Bildschirm bleibt an.</p>'
       : '<p class="dim">Tippe einmal auf den Bildschirm, damit er während der Jagd anbleibt.</p>'}
@@ -290,12 +292,16 @@ const lockedUntil = (state) => {
 function renderRound(state) {
   const { game, round, players, me } = state;
   const entries = entriesOf(state);
-  const running = game.phase === 'round_running';
+  const running = isRunning(game.phase);
   if (!running || (sel >= 0 && (round.revealed[sel] !== '0' || entries.has(sel)))) sel = -1;
   const locked = running ? lockedUntil(state) : null;
   const errors = errorCount(state);
-  const mine = players.find((p) => p.id === me.player_id);
-  const key = [round.id, round.revealed, state.lines.length, entries.size, sel, flash, locked, errors, game.balloons_left, mine.lines_claimed, netMessage, game.phase].join('|');
+  const trial = round.kind === 'trial';
+  // The trial leaves the players' counters alone, its lines count only here.
+  const myLines = trial
+    ? state.lines.filter((l) => l.player_id === me.player_id).length
+    : players.find((p) => p.id === me.player_id).lines_claimed;
+  const key = [round.id, round.revealed, state.lines.length, entries.size, sel, flash, locked, errors, game.balloons_left, myLines, netMessage, game.phase].join('|');
   const drawn = draw('round', key, () => {
     const n = round.size;
     const counts = new Map();
@@ -309,8 +315,11 @@ function renderRound(state) {
     }
     const stat = (value, label) => `<div class="ph-stat"><b>${value}</b><span>${label}</span></div>`;
     const roundTimer = running ? `<span data-cd="${new Date(round.deadline).getTime()}"></span>` : '–';
-    return `<div class="ph-head">${stat(roundTimer, 'Runde')}${stat(esc(game.balloons_left), 'Ballone')}${stat(esc(mine.lines_claimed), 'Linien')}</div>
-      <div class="ph-sub"><span>${netMessage ? esc(netMessage) : `Runde ${esc(round.round_no)}${running ? '' : ' beendet'}`}</span>
+    const label = trial
+      ? (running ? 'Proberunde, zählt nicht' : 'Proberunde beendet')
+      : `Runde ${esc(round.round_no)}${running ? '' : ' beendet'}`;
+    return `<div class="ph-head">${stat(roundTimer, trial ? 'Probe' : 'Runde')}${stat(trial ? '–' : esc(game.balloons_left), 'Ballone')}${stat(esc(myLines), 'Linien')}</div>
+      <div class="ph-sub"><span>${netMessage ? esc(netMessage) : label}</span>
         <span class="err-dots" aria-label="${errors} Fehler">${Array.from({ length: game.config.error_max }, (_, k) => `<i class="${k < errors ? 'on' : ''}"></i>`).join('')}</span></div>
       <div class="ph-grid" style="--n:${n}">${gridHtml(state, { phone: true, entries, sel, flash, meColor: me.color })}</div>
       <div class="keypad" style="grid-template-columns:repeat(${KEYPAD_COLUMNS[n]},1fr)">${keys.join('')}</div>
@@ -333,7 +342,7 @@ function redraw() {
 
 function onCellTap(idx) {
   const state = lastState;
-  if (!state?.round || state.game.phase !== 'round_running' || lockedUntil(state)) return;
+  if (!state?.round || !isRunning(state.game.phase) || lockedUntil(state)) return;
   if (state.round.revealed[idx] !== '0' || entriesOf(state).has(idx)) return;
   sel = idx;
   redraw();
@@ -384,11 +393,13 @@ async function onDigitTap(digit) {
 // ---------- Hunt ----------
 function huntView(me) {
   if (me.hunt) {
-    return msUntil(me.hunt.deadline) > 0 ? { kind: 'active', hunt: me.hunt } : { kind: 'failed', key: me.hunt.started_at };
+    return msUntil(me.hunt.deadline) > 0
+      ? { kind: 'active', hunt: me.hunt }
+      : { kind: 'failed', key: me.hunt.started_at, trial: me.hunt.kind === 'trial' };
   }
   const last = me.last_hunt;
   if (last && serverNow() - new Date(last.ended_at).getTime() < HUNT_RESULT_MS) {
-    return { kind: last.status === 'success' ? 'success' : 'failed', key: last.started_at };
+    return { kind: last.status === 'success' ? 'success' : 'failed', key: last.started_at, trial: last.kind === 'trial' };
   }
   return null;
 }
@@ -401,7 +412,7 @@ function renderHunt(view) {
     const drawn = draw('hunt', `active|${hunt.started_at}`, () => `<div class="overlay ov-hunt">
       <h1 class="ph-title">${esc(hunt.lines_label)} gelöst!</h1>
       <div class="cd"><span data-cd="${ms(hunt.deadline)}" data-fmt="s"></span></div>
-      <p class="rule" id="hunt-rule">Handy liegen lassen. Ballon holen. Ab ins Depot.</p>
+      <p class="rule" id="hunt-rule">${hunt.kind === 'trial' ? 'Proberunde: Niemand rennt. Warte, bis der Knopf bereit ist, und drücke ihn.' : 'Handy liegen lassen. Ballon holen. Ab ins Depot.'}</p>
       <button class="hunt-btn" id="hunt-btn" data-press type="button" disabled><i class="fill"></i><span>BALLON IM DEPOT</span></button>
     </div>`);
     if (drawn) updateCountdowns($('phone'));
@@ -419,10 +430,12 @@ function renderHunt(view) {
     return;
   }
   if (view.kind === 'success') {
-    draw('hunt', `success|${view.key}`, () => `<div class="overlay ov-hunt"><div class="ov-mark">✔</div><h1 class="ph-title">Ballon zählt!</h1><p class="rule">Du darfst beim Kassensturz einen Ballon mehr platzen lassen.</p></div>`);
+    draw('hunt', `success|${view.key}`, () => (view.trial
+      ? '<div class="overlay ov-hunt"><div class="ov-mark">✔</div><h1 class="ph-title">Geschafft!</h1><p class="rule">Im Spiel dürftest du dafür einen Ballon mehr platzen lassen.</p></div>'
+      : '<div class="overlay ov-hunt"><div class="ov-mark">✔</div><h1 class="ph-title">Ballon zählt!</h1><p class="rule">Du darfst beim Kassensturz einen Ballon mehr platzen lassen.</p></div>'));
     return;
   }
-  draw('hunt', `failed|${view.key}`, () => `<div class="overlay ov-fail"><div class="ov-mark">✗</div><h1 class="ph-title">Zeit abgelaufen</h1><p class="rule">Ein mitgebrachter Ballon darf ins Depot, zählt aber nicht.</p></div>`);
+  draw('hunt', `failed|${view.key}`, () => `<div class="overlay ov-fail"><div class="ov-mark">✗</div><h1 class="ph-title">Zeit abgelaufen</h1><p class="rule">${view.trial ? 'Im Spiel würde ein Ballon jetzt nicht mehr zählen.' : 'Ein mitgebrachter Ballon darf ins Depot, zählt aber nicht.'}</p></div>`);
   // The clock of this phone says it is over: ask the server to close it now.
   if (lastState.me.hunt && lateTickFor !== view.key) {
     lateTickFor = view.key;
@@ -439,7 +452,7 @@ async function onPress() {
     const { me } = lastState;
     if (r.ok) {
       localHunt = null;
-      localResult = { status: 'success', started_at: hunt.started_at, ended_at: new Date(serverNow()).toISOString() };
+      localResult = { status: 'success', kind: hunt.kind, started_at: hunt.started_at, ended_at: new Date(serverNow()).toISOString() };
       me.hunt = null;
       me.last_hunt = localResult;
     } else if (r.reason === 'no_hunt') {
@@ -456,9 +469,10 @@ async function onPress() {
   redraw();
 }
 
-function renderEnded() {
-  draw('ended', '', () => `<div class="ph-pad ph-center">
-    <h1 class="ph-title">Runde beendet</h1>
+function renderEnded({ game }) {
+  const trial = game.phase === 'trial_ending';
+  draw('ended', String(trial), () => `<div class="ph-pad ph-center">
+    <h1 class="ph-title">${trial ? 'Proberunde beendet' : 'Runde beendet'}</h1>
     <p class="dim">Warte auf laufende Jagden.</p>
   </div>`);
 }
@@ -485,7 +499,7 @@ function renderDistribute(state) {
   syncBreak(game);
   const left = sipsLeft(me);
   if (left <= 0) {
-    const gaveAny = sipsAcked !== Infinity || transfers.some((t) => t.from_player === me.player_id);
+    const gaveAny = sipsPending > 0 || sipsAcked !== Infinity || transfers.some((t) => t.from_player === me.player_id);
     draw('sips-done', String(gaveAny), () => `<div class="ph-pad ph-center">
       <h1 class="ph-title">${gaveAny ? 'Alles verteilt' : 'Nichts zu verteilen'}</h1>
       <p class="dim">Warte auf die anderen.</p>

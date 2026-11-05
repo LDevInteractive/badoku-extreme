@@ -43,6 +43,7 @@ let screen = null;
 let gridKey = '';
 let lastState = null;
 let breakKey = '';
+let starting = false;
 
 function fitStage() {
   const scale = Math.min(window.innerWidth / STAGE_W, window.innerHeight / STAGE_H);
@@ -182,7 +183,7 @@ function render(state) {
   lastState = state;
   const { phase } = state.game;
   if (phase === 'lobby') renderLobby(state);
-  else if (state.round && (phase === 'round_running' || phase === 'round_ending')) renderRound(state);
+  else if (state.round && ['round_running', 'round_ending', 'trial_running', 'trial_ending'].includes(phase)) renderRound(state);
   // A reveal effect that is still running gets to finish before the break takes over.
   else if (state.round && isBreak(phase) && isFxRunning(state)) renderRound(state);
   else if (phase === 'break_distribute') renderDistribute(state);
@@ -207,7 +208,7 @@ function renderLobby({ game, players, palette }) {
         <div><span class="tv-label">Spielcode</span><div class="code">${esc(game.code)}</div></div>
         <div class="tv-players" id="tv-players"></div>
         <form class="tv-actions" id="f-start" autocomplete="off">
-          <button class="btn" type="button" disabled>Proberunde</button>
+          <button class="btn" id="start-trial" type="button" disabled>Proberunde</button>
           <input class="input tv-pin tv-start-pin" id="start-pin" type="password" inputmode="numeric" maxlength="6" placeholder="PIN" aria-label="Host-PIN" autocomplete="off" ${hostPin ? 'hidden' : ''}>
           <button class="btn btn-primary" id="start-main" type="submit" disabled>Hauptspiel starten</button>
           <span class="tv-hint" id="start-hint"></span>
@@ -216,7 +217,11 @@ function renderLobby({ game, players, palette }) {
       <button class="tv-leave" id="leave" type="button">Anderes Spiel</button>
     </div>`;
     $('leave').addEventListener('click', () => leaveGame());
-    $('f-start').addEventListener('submit', onStartMain);
+    $('f-start').addEventListener('submit', (e) => {
+      e.preventDefault();
+      startGame('host_start_main');
+    });
+    $('start-trial').addEventListener('click', () => startGame('host_start_trial'));
   }
   const seats = [];
   for (let i = 0; i < game.config.max_players; i++) {
@@ -227,25 +232,30 @@ function renderLobby({ game, players, palette }) {
   }
   $('tv-players').innerHTML = seats.join('');
   const enough = players.length >= 2;
-  const button = $('start-main');
-  if (button.dataset.busy !== '1') button.disabled = !enough;
+  if (!starting) {
+    $('start-main').disabled = !enough;
+    $('start-trial').disabled = !enough;
+  }
   const hint = $('start-hint');
-  if (hint.dataset.error !== '1') hint.textContent = enough ? 'Proberunde folgt mit M6.' : 'Es braucht mindestens 2 Spieler.';
+  if (hint.dataset.error !== '1') {
+    if (!enough) hint.textContent = 'Es braucht mindestens 2 Spieler.';
+    else hint.textContent = game.trial_done ? 'Proberunde fertig. Sie zählt nicht und lässt sich wiederholen.' : 'Die Proberunde zählt nicht.';
+  }
 }
 
-async function onStartMain(e) {
-  e.preventDefault();
+async function startGame(fn) {
   const pin = hostPin || $('start-pin').value.trim();
-  const button = $('start-main');
   const hint = $('start-hint');
   const fail = (reason) => {
     hint.dataset.error = '1';
     hint.textContent = ERRORS[reason] || ERRORS.network;
   };
-  button.dataset.busy = '1';
-  button.disabled = true;
+  starting = true;
+  $('start-main').disabled = true;
+  $('start-trial').disabled = true;
+  delete hint.dataset.error;
   try {
-    const r = await rpc('host_start_main', { p_code: code, p_pin: pin });
+    const r = await rpc(fn, { p_code: code, p_pin: pin });
     if (r.ok) {
       hostPin = pin;
       storeSet(pinKey(code), pin);
@@ -264,9 +274,10 @@ async function onStartMain(e) {
     console.warn(err);
     fail('network');
   } finally {
+    starting = false;
     if ($('start-main')) {
-      button.dataset.busy = '';
-      button.disabled = false;
+      $('start-main').disabled = false;
+      $('start-trial').disabled = false;
     }
   }
 }
@@ -317,25 +328,37 @@ function renderRound(state) {
   const key = `${round.id}/${lines.length}/${round.revealed}`;
   if (key !== gridKey) {
     gridKey = key;
+    $('tv-grid').style.setProperty('--n', round.size);
     $('tv-grid').innerHTML = gridHtml(state);
   }
 
-  const ending = game.phase !== 'round_running';
-  const gameEnd = new Date(game.main_started_at).getTime() + game.config.game_limit_s * 1000;
+  const trial = round.kind === 'trial';
+  const ending = !['round_running', 'trial_running'].includes(game.phase);
   const roundEnd = new Date(round.deadline).getTime();
   const roundValue = ending ? '–' : `<span data-cd="${roundEnd}"></span>`;
   const events = ticker.map(tickerLine).filter(Boolean).slice(0, TICKER_LINES);
-  $('tv-side').innerHTML = `
-    ${ending ? `<div><span class="tv-tag">RUNDE ${esc(round.round_no)} BEENDET</span></div>` : ''}
-    <div class="tv-stats">
-      <div class="tv-panel tv-stat"><span class="tv-label">Spiel</span><b><span data-cd="${gameEnd}"></span></b></div>
+  let tag = '';
+  if (trial) tag = ending ? 'PROBERUNDE BEENDET' : 'PROBERUNDE · zählt nicht';
+  else if (ending) tag = `RUNDE ${round.round_no} BEENDET`;
+  // The trial leaves the players' counters alone, its lines and hunts count only here.
+  const linesOf = (p) => (trial ? lines.filter((l) => l.player_id === p.id).length : p.lines_claimed);
+  const huntsOf = (p) => (trial ? state.trial_success?.[p.id] || 0 : p.hunts_success);
+  const stats = trial
+    ? `<div class="tv-stats one">
+      <div class="tv-panel tv-stat"><span class="tv-label">Probe</span><b>${roundValue}</b></div>
+    </div>`
+    : `<div class="tv-stats">
+      <div class="tv-panel tv-stat"><span class="tv-label">Spiel</span><b><span data-cd="${new Date(game.main_started_at).getTime() + game.config.game_limit_s * 1000}"></span></b></div>
       <div class="tv-panel tv-stat"><span class="tv-label">Runde ${esc(round.round_no)}</span><b>${roundValue}</b></div>
       <div class="tv-panel tv-stat hot"><span class="tv-label">Ballone</span><b>${esc(game.balloons_left)}</b></div>
-    </div>
+    </div>`;
+  $('tv-side').innerHTML = `
+    ${tag ? `<div><span class="tv-tag">${esc(tag)}</span></div>` : ''}
+    ${stats}
     <div class="tv-panel"><h2 class="tv-label tv-hunts-title">Jagden</h2>${huntsHtml(state)}</div>
     <div class="tv-panel"><div class="score">
       <span></span><span class="h" style="text-align:left">Spieler</span><span class="h">Linien</span><span class="h">Jagden ✓</span>
-      ${players.map((p) => `<span class="sw" style="--c:${esc(p.color)}"></span><span>${esc(p.name)}</span><span class="n">${esc(p.lines_claimed)}</span><span class="n">${esc(p.hunts_success)}</span>`).join('')}
+      ${players.map((p) => `<span class="sw" style="--c:${esc(p.color)}"></span><span>${esc(p.name)}</span><span class="n">${esc(linesOf(p))}</span><span class="n">${esc(huntsOf(p))}</span>`).join('')}
     </div></div>
     <div class="tv-panel" style="flex:1"><div class="ticker">${events.map((t) => `<div>${esc(t)}</div>`).join('')}</div></div>
     ${ending ? '<button class="tv-leave" id="leave" type="button">Anderes Spiel</button>' : ''}`;

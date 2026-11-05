@@ -40,7 +40,8 @@ Reihenfolge** einfügen und ausführen (eine Datei pro Lauf):
 | `009_break_rpc.sql` | Pausen: Shots verteilen, Zufall, Trinken, bereit, erzwingen, nächste Runde oder Kassensturz |
 | `010_round_end_hold.sql` | Fertiges Raster bleibt am Rundenende mindestens `round_end_hold_s` sichtbar |
 | `011_trial_rpc.sql` | Proberunde 4×4: Start, Rückkehr in die Lobby, nichts davon zählt |
-| `012_…` | folgen mit den nächsten Meilensteinen |
+| `012_cashout_rpc.sql` | Kassensturz, Powersudoku 6×6, Rangliste, Statistik |
+| `013_…` | folgen mit den nächsten Meilensteinen |
 
 ### 3. Frontend konfigurieren
 

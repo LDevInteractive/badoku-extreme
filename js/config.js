@@ -6,7 +6,10 @@
 export const SUPABASE_URL = 'https://jcdfuixhottekfwktmis.supabase.co';
 export const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_E_QoyQG9Ekkmch8AZH0YUw_VMyAQg5T';
 
-export const APP_VERSION = '0.6.0-m6';
+export const APP_VERSION = '0.7.0-m7';
+
+// Cashout on the TV (CLAUDE.md section 2.10): how long the amounts count up.
+export const CASH_COUNT_MS = 2500;
 
 // Hunt screen on the phone (CLAUDE.md section 9.2): how long the outcome stays, vibration at the start.
 export const HUNT_RESULT_MS = 2000;

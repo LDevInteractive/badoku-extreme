@@ -53,7 +53,8 @@ LOBBY ─► PROBERUNDE 4×4 (zählt nicht) ─► LOBBY (bereit)
 - Gleiche Mechanik wie das Hauptspiel (Eingabe, Fehler, Sperre, Linie gelöst, Jagd-Animation, Button), aber:
   - Niemand rennt wirklich. Jagd-Zeiten verkürzt (`trial_hunt_duration_s` 15, `trial_hunt_min_press_s` 5).
   - **Keine Shots, keine Statistik, zählt nicht** zu den 35 Jagden und nicht zum 25-Minuten-Limit.
-- Danach zurück in die Lobby, der Host startet das Hauptspiel.
+  - Die Jagd-Texte auf dem Handy sagen, dass niemand rennt und dass das Ergebnis nicht zählt.
+- Danach zurück in die Lobby, der Host startet das Hauptspiel oder wiederholt die Proberunde. Sie ist beliebig oft wiederholbar.
 
 ### 2.4 Sudoku-Runde (9×9)
 - Alle spielen **dasselbe Rätsel** (vom Server zufällig aus dem Pool gewählt, nie zweimal im selben Spiel).
@@ -122,6 +123,7 @@ Zwei Teilphasen:
 - Jeder gibt auf seinem Handy seinen **Gesamtbetrag** ein (Format `1.37` → intern Cent, ganzzahlig, 0 bis `cash_max_cents`).
 - TV zeigt, wer schon eingegeben hat (✓), **Beträge bleiben verborgen**. Korrektur möglich, bis der Host mit PIN **«Kassensturz abschliessen»** drückt (nur möglich, wenn alle eingegeben haben).
 - Danach: Beträge werden auf dem TV mit Hochzähl-Animation enthüllt. Plausibilitätsanzeige: «Summe aller Eingaben: x.xx € von max. `coins_total_cents`».
+- Nach `cash_reveal_s` = 10 s folgt von selbst das Powersudoku oder die Rangliste, ohne Knopf. Die Limite des Powersudokus beginnt erst danach; bis dahin zeigen die Handys der Beteiligten einen Countdown, die übrigen «Schau auf den TV».
 
 ### 2.11 Rangliste & Powersudoku
 - Rang nach Betrag absteigend.
@@ -136,7 +138,7 @@ Zwei Teilphasen:
 - Jagden: gestartet / erfolgreich / Quote
 - Fehler gesamt, ausgelöste Sperren
 - Shots verteilt / erhalten (inkl. «Lieblingsopfer»: an wen am meisten verteilt)
-- Auszeichnungen: Linien-König, Jagd-Profi (beste Quote, min. 2 Jagden), Fehlerteufel, Shot-Magnet (am meisten erhalten), Grosszügigster (am meisten verteilt)
+- Auszeichnungen: Linien-König, Jagd-Profi (beste Quote, min. `award_min_hunts` = 2 Jagden), Fehlerteufel, Shot-Magnet (am meisten erhalten), Grosszügigster (am meisten verteilt)
 
 ---
 
@@ -201,6 +203,8 @@ break_drink ──(alle bereit | Host erzwingt)──► round_running   wenn hu
 cashout ──host_close_cashout──► tiebreak (falls Gleichstand) ──(alle Gruppen fertig)──► results
                              └─► results (kein Gleichstand)
 ```
+
+Die Enthüllung der Beträge (§2.10) ist keine eigene Phase: Sie läuft am Anfang von `tiebreak` bzw. `results`, ihr Ende steht in `phase_deadline`. Bei `results` nach einem Powersudoku ist `phase_deadline` leer, es wird nichts mehr enthüllt.
 
 Jede Aktion ist nur in bestimmten Phasen erlaubt; sonst gibt die RPC `{ok:false, reason:'wrong_phase'}` zurück (kein Fehler werfen, Client ignoriert still).
 
@@ -294,6 +298,8 @@ Indizes auf alle `game_id`/`round_id`-Fremdschlüssel.
   "distribute_timeout_s": 60,
   "force_continue_after_s": 120,
   "tiebreak_limit_s": 90,
+  "cash_reveal_s": 10,
+  "award_min_hunts": 2,
   "difficulty": "leicht",
   "cash_max_cents": 1000,
   "coins_total_cents": 940
@@ -427,7 +433,9 @@ badoku-extreme/
 │  │  ├─ 007_round_rpc.sql   Sudoku-Runde: host_start_main, enter_digit, Rundenlimit
 │  │  ├─ 008_hunt_rpc.sql    Jagd: hunt_press, Fristablauf, Ende bei der letzten Jagd
 │  │  ├─ 009_break_rpc.sql   Pausen: Shots verteilen, Zufall, Trinken, bereit, erzwingen
-│  │  └─ 010_round_end_hold.sql  Fertiges Raster bleibt am Rundenende sichtbar
+│  │  ├─ 010_round_end_hold.sql  Fertiges Raster bleibt am Rundenende sichtbar
+│  │  ├─ 011_trial_rpc.sql   Proberunde: host_start_trial, finish_trial, zurück in die Lobby
+│  │  └─ 012_cashout_rpc.sql Kassensturz, Powersudoku, Rangliste, Statistik
 │  ├─ tests/rules_test.sql   Szenario-Tests (raise exception bei Fehler)
 │  └─ seed/                  (gitignored) puzzles.sql
 ├─ tools/
@@ -489,7 +497,7 @@ Gilt auf dem TV und auf allen Handys. Das Handy des Lösers zeigt stattdessen so
 
 ## 10. Tests
 
-1. **Rätsel:** `node --test tools/` – Generator-Eigenschaften (§7).
+1. **Rätsel:** `node --test tools/*.test.mjs` – Generator-Eigenschaften (§7).
 2. **SQL-Szenarien:** `supabase/tests/rules_test.sql`, im SQL-Editor ausführbar, räumt danach auf. Deckt ab: Beitritt (Name/Farbe doppelt), Fehlerfenster inkl. Zurücksetzen nach 30 s und Sperre, Beanspruchen, gleichzeitige Zeile + Spalte (1 Jagd, 2 Linien), Neutral-Regel, «Pech gehabt»-Fall, Jagd zu früh / rechtzeitig / zu spät (Zeitstempel im Test direkt manipulieren), 35-Jagden-Ende, Zeitlimit-Entscheid, Shots (nicht an sich selbst, Zufall), Kassensturz-Sichtbarkeit, Tiebreak-Ranking inkl. Los.
 3. **Bot-Simulation:** `node tools/bots.mjs --players 7 --speed normal` erstellt ein Spiel mit verkürzter Config (optional), lässt 7 Bots mit realistischem Tempo, Fehlerquote und Jagd-Erfolgsquote spielen, ruft `tick` auf und gibt am Ende aus: Dauer pro Runde, Linien pro Spieler, Jagden, Spielverlauf. Ziel: Vorgaben-Anzahl so justieren, dass eine Runde ca. 4–6 Min. dauert.
 4. **Generalprobe:** 3–4 echte Handys (iOS + Android), Wake Lock 2 Min. prüfen.

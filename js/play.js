@@ -7,7 +7,7 @@ import { startSync } from './sync.js';
 import { msUntil, serverNow, updateCountdowns } from './clock.js';
 import { gridHtml, isFxRunning } from './grid.js';
 import * as wakelock from './wakelock.js';
-import { $, esc, setConn, storeGet, storeRemove, storeSet, withBusy } from './util.js';
+import { $, esc, isRevealing, money, setConn, storeGet, storeRemove, storeSet, withBusy } from './util.js';
 
 const TICK_FALLBACK_MS = 5000;
 const UI_TICK_MS = 250;
@@ -15,6 +15,7 @@ const FLASH_MS = 520;
 const NET_MESSAGE_MS = 2500;
 const VIBRATE_ERROR_MS = 120;
 const CODE_RE = /^[0-9]{4}$/;
+const AMOUNT_RE = /^([0-9]{1,4})(?:[.,]([0-9]{1,2}))?$/;
 const KEYPAD_COLUMNS = { 4: 4, 6: 3, 9: 5 };
 const tokenKey = (code) => `badoku.token.${code}`;
 const NAME_KEY = 'badoku.name';
@@ -66,6 +67,9 @@ const sipsToTarget = new Map();
 let readySent = false;
 let breakMessage = '';
 
+// Cashout state that only lives on this device.
+let cashEditing = false;
+
 // ---------- Connection to one game ----------
 function connect(code) {
   if (syncedCode === code) return;
@@ -105,7 +109,7 @@ function onGameMissing(code) {
 }
 
 const sameTime = (a, b) => new Date(a).getTime() === new Date(b).getTime();
-const isRunning = (phase) => phase === 'round_running' || phase === 'trial_running';
+const isRunning = (phase) => ['round_running', 'trial_running', 'tiebreak'].includes(phase);
 
 // A snapshot that was on its way while the hunt started or ended must not undo that.
 function reconcileHunt(me) {
@@ -148,6 +152,8 @@ function drawPlayer(state) {
   const ending = phase === 'round_ending' || phase === 'trial_ending';
   if (hunt) renderHunt(hunt);
   else if (phase === 'lobby') renderLobby(state);
+  else if (isRevealing(state.game, serverNow())) renderReveal(state);
+  else if (phase === 'tiebreak') renderTiebreak(state);
   else if (state.round && isRunning(phase)) renderRound(state);
   // The finished grid stays until the break: nobody is hunting, or the last effect still plays out.
   else if (state.round && ending && (!state.hunts_active.length || isFxRunning(state))) renderRound(state);
@@ -155,7 +161,8 @@ function drawPlayer(state) {
   else if (ending) renderEnded(state);
   else if (phase === 'break_distribute') renderDistribute(state);
   else if (phase === 'break_drink') renderDrink(state);
-  else renderOther(state);
+  else if (phase === 'cashout') renderCashout(state);
+  else renderResults(state);
 }
 
 // Redraws only when the content changed: a redraw would restart nothing, but it would
@@ -297,11 +304,12 @@ function renderRound(state) {
   const locked = running ? lockedUntil(state) : null;
   const errors = errorCount(state);
   const trial = round.kind === 'trial';
+  const tie = round.kind === 'tiebreak';
   // The trial leaves the players' counters alone, its lines count only here.
   const myLines = trial
     ? state.lines.filter((l) => l.player_id === me.player_id).length
     : players.find((p) => p.id === me.player_id).lines_claimed;
-  const key = [round.id, round.revealed, state.lines.length, entries.size, sel, flash, locked, errors, game.balloons_left, myLines, netMessage, game.phase].join('|');
+  const key =[round.id, round.revealed, state.lines.length, entries.size, sel, flash, locked, errors, game.balloons_left, myLines, netMessage, game.phase].join('|');
   const drawn = draw('round', key, () => {
     const n = round.size;
     const counts = new Map();
@@ -315,10 +323,14 @@ function renderRound(state) {
     }
     const stat = (value, label) => `<div class="ph-stat"><b>${value}</b><span>${label}</span></div>`;
     const roundTimer = running ? `<span data-cd="${new Date(round.deadline).getTime()}"></span>` : '–';
-    const label = trial
-      ? (running ? 'Proberunde, zählt nicht' : 'Proberunde beendet')
-      : `Runde ${esc(round.round_no)}${running ? '' : ' beendet'}`;
-    return `<div class="ph-head">${stat(roundTimer, trial ? 'Probe' : 'Runde')}${stat(trial ? '–' : esc(game.balloons_left), 'Ballone')}${stat(esc(myLines), 'Linien')}</div>
+    let label = `Runde ${esc(round.round_no)}${running ? '' : ' beendet'}`;
+    if (trial) label = running ? 'Proberunde, zählt nicht' : 'Proberunde beendet';
+    if (tie) label = 'Powersudoku, zuerst fertig gewinnt';
+    const open = [...round.givens].filter((d) => d === '0').length;
+    const head = tie
+      ? stat(roundTimer, 'Limit') + stat(esc(entries.size), 'Korrekt') + stat(esc(open - entries.size), 'Offen')
+      : stat(roundTimer, trial ? 'Probe' : 'Runde') + stat(trial ? '–' : esc(game.balloons_left), 'Ballone') + stat(esc(myLines), 'Linien');
+    return `<div class="ph-head">${head}</div>
       <div class="ph-sub"><span>${netMessage ? esc(netMessage) : label}</span>
         <span class="err-dots" aria-label="${errors} Fehler">${Array.from({ length: game.config.error_max }, (_, k) => `<i class="${k < errors ? 'on' : ''}"></i>`).join('')}</span></div>
       <div class="ph-grid" style="--n:${n}">${gridHtml(state, { phone: true, entries, sel, flash, meColor: me.color })}</div>
@@ -364,6 +376,7 @@ async function onDigitTap(digit) {
         me.hunt = r.hunt;
         sync?.refresh();
       }
+      if (r.finished) sync?.refresh();
     } else if (r.ok && r.result === 'wrong') {
       flash = cell;
       setTimeout(() => {
@@ -633,11 +646,122 @@ async function onReady() {
   redraw();
 }
 
-function renderOther({ game }) {
-  draw('other', game.phase, () => `<div class="ph-pad ph-center">
-    <h1 class="ph-title">Spiel ${esc(game.code)} läuft</h1>
-    <p class="dim">Diese Ansicht folgt mit den nächsten Meilensteinen.</p>
+// ---------- Cashout ----------
+const balloonsWord = (n) => (n === 1 ? 'Ballon' : 'Ballone');
+
+// Integer arithmetic only: 1.37 must become exactly 137 cents. Null when it is no amount.
+function parseCents(text) {
+  const match = AMOUNT_RE.exec(text.trim());
+  if (!match) return null;
+  return Number(match[1]) * 100 + Number((match[2] || '').padEnd(2, '0'));
+}
+
+// The field is only rebuilt when sent or not sent changes, typing is never disturbed.
+function renderCashout({ me }) {
+  const sent = me.cash_cents !== null && !cashEditing;
+  const allowed = me.balloons_allowed;
+  draw('cashout', `${sent}|${allowed}|${sent ? me.cash_cents : ''}`, () => `<form class="ph-pad" id="cash-form" autocomplete="off">
+    <p class="label">Kassensturz</p>
+    <h1 class="ph-title">Du darfst ${esc(allowed)} ${balloonsWord(allowed)} platzen lassen</h1>
+    <p class="dim">Zähle dein Geld am Tisch und gib den Gesamtbetrag ein.</p>
+    <div class="field"><label class="label" for="cash">Betrag in Euro</label>
+      <input class="input amount" id="cash" inputmode="decimal" maxlength="7" placeholder="0.00" autocomplete="off" value="${me.cash_cents === null ? '' : (me.cash_cents / 100).toFixed(2)}" ${sent ? 'disabled' : ''}></div>
+    ${sent
+      ? '<p class="cash-ok">✓ Gesendet. Der Betrag bleibt verborgen.</p><button class="btn btn-block" id="cash-edit" data-cash-edit type="button">Ändern</button>'
+      : '<button class="btn btn-primary btn-big btn-block" id="cash-go" type="submit">Senden</button><p class="form-err" id="cash-err" role="alert"></p>'}
+  </form>`);
+}
+
+async function onCashSubmit(e) {
+  e.preventDefault();
+  const { game } = lastState;
+  const cents = parseCents($('cash').value);
+  const refuse = () => {
+    $('cash-err').textContent = `Bitte einen Betrag wie 1.37 eingeben, höchstens ${(game.config.cash_max_cents / 100).toFixed(2)}.`;
+  };
+  if (cents === null || cents > game.config.cash_max_cents) return refuse();
+  await withBusy($('cash-go'), async () => {
+    try {
+      const r = await rpc('submit_cash', { p_code: syncedCode, p_token: token, p_cents: cents });
+      if (r.ok) {
+        cashEditing = false;
+        lastState.me.cash_cents = r.cash_cents;
+        sync?.refresh();
+      } else if (r.reason === 'bad_amount') {
+        refuse();
+      } else if (r.reason === 'wrong_phase') {
+        sync?.refresh();
+      }
+    } catch (err) {
+      console.warn(err);
+      $('cash-err').textContent = ERRORS.network;
+    }
+  });
+  redraw();
+}
+
+function renderReveal({ game, players, me }) {
+  const inGroup = game.phase === 'tiebreak' && players.find((p) => p.id === me.player_id).tiebreak_group !== null;
+  const drawn = draw('reveal', String(inGroup), () => `<div class="ph-pad ph-center">
+    <h1 class="ph-title">${inGroup ? 'Gleichstand! Du spielst das Powersudoku.' : 'Kassensturz abgeschlossen'}</h1>
+    ${inGroup
+      ? `<div class="ph-big ph-ok"><span data-cd="${new Date(game.phase_deadline).getTime()}" data-fmt="s"></span></div>`
+      : '<p class="dim">Schau auf den TV.</p>'}
   </div>`);
+  if (drawn) updateCountdowns($('phone'));
+}
+
+// ---------- Tiebreak ----------
+function renderTiebreak(state) {
+  const { round, players, me } = state;
+  const mine = players.find((p) => p.id === me.player_id);
+  if (mine.tiebreak_group === null) {
+    const drawn = draw('tie-watch', '', () => `<div class="ph-pad ph-center">
+      <h1 class="ph-title">Zuschauen</h1>
+      <p class="dim">Auf dem TV läuft das Powersudoku. Noch <span data-cd="${new Date(round.deadline).getTime()}"></span>.</p>
+    </div>`);
+    if (drawn) updateCountdowns($('phone'));
+    return;
+  }
+  const winner = players.find((p) => p.tiebreak_group === mine.tiebreak_group && p.tiebreak_finished_at);
+  if (winner) {
+    draw('tie-done', winner.id, () => `<div class="ph-pad ph-center">
+      <div class="ph-big ph-ok">✓</div>
+      <h1 class="ph-title">${winner.id === me.player_id ? 'Du warst zuerst fertig!' : `${esc(winner.name)} war zuerst fertig`}</h1>
+      <p class="dim">Warte auf die anderen Gruppen.</p>
+    </div>`);
+    return;
+  }
+  renderRound(state);
+}
+
+// ---------- Results ----------
+const clockOf = (seconds) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+
+function renderResults({ players, me, stats }) {
+  const mine = players.find((p) => p.id === me.player_id);
+  const s = stats.players.find((x) => x.player_id === me.player_id);
+  draw('results', String(mine.final_rank), () => {
+    const victim = s.favourite_victim;
+    const perRound = s.lines_by_round.length > 1 ? ` (${s.lines_by_round.join(' · ')})` : '';
+    const rows = [
+      ['Beanspruchte Linien', `${s.lines_total}${perRound}`],
+      ['Schnellste Linie', s.fastest_line_s === null ? '–' : `${clockOf(s.fastest_line_s)} ab Rundenstart`],
+      ['Jagden', s.hunts_started ? `${s.hunts_success} von ${s.hunts_started} erfolgreich (${s.hunts_quote} %)` : 'keine'],
+      ['Fehler', s.errors_total],
+      ['Ausgelöste Sperren', s.locks_total],
+      ['Shots verteilt', s.sips_given],
+      ['Shots erhalten', s.sips_received],
+      ['Lieblingsopfer', victim ? `${players.find((p) => p.id === victim.player_id).name}, ${victim.amount} ${shotsWord(victim.amount)}` : '–'],
+    ];
+    return `<div class="ph-pad">
+      <p class="label">Dein Resultat</p>
+      <div class="ph-big ph-rank">${esc(mine.final_rank)}. Rang</div>
+      ${mine.rank_by_lot ? '<p class="lot-note">Per Los entschieden</p>' : ''}
+      <h1 class="ph-title">${money(mine.cash_cents)}</h1>
+      <div>${rows.map(([k, v]) => `<div class="statline"><span class="dim">${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}</div>
+    </div>`;
+  });
 }
 
 // The first tap after joining switches the wake lock on (CLAUDE.md 2.2); a browser
@@ -674,7 +798,16 @@ $('phone').addEventListener('click', (e) => {
     onRandom();
     return;
   }
+  if (e.target.closest('[data-cash-edit]')) {
+    cashEditing = true;
+    redraw();
+    return;
+  }
   if (e.target.closest('[data-ready]')) onReady();
+});
+
+$('phone').addEventListener('submit', (e) => {
+  if (e.target.id === 'cash-form') onCashSubmit(e);
 });
 
 // Time passes without a new snapshot: countdowns, lock end, error window, end of an effect.

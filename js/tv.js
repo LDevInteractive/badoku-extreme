@@ -6,7 +6,8 @@ import { startSync } from './sync.js';
 import { serverNow, updateCountdowns } from './clock.js';
 import { gridHtml, isFxRunning } from './grid.js';
 import { qrSvg } from './qr.js';
-import { $, esc, setConn, storeGet, storeRemove, storeSet, withBusy } from './util.js';
+import { CASH_COUNT_MS } from './config.js';
+import { $, esc, isRevealing, money, setConn, storeGet, storeRemove, storeSet, withBusy } from './util.js';
 
 const STAGE_W = 1920;
 const STAGE_H = 1080;
@@ -28,6 +29,7 @@ const ERRORS = {
   too_few_players: 'Es braucht mindestens 2 Spieler.',
   too_early: 'Noch einen Moment, dann nochmals drücken.',
   no_puzzle: 'Im Rätsel-Pool ist kein passendes Rätsel mehr.',
+  cash_missing: 'Es haben noch nicht alle eingegeben.',
   network: 'Keine Verbindung zum Server, bitte nochmals versuchen.',
 };
 
@@ -158,6 +160,8 @@ function openGame(nextCode) {
   countdownTimer = setInterval(() => {
     // The last reveal effect has played out, no new snapshot announces that.
     if (screen === 'round' && lastState && isBreak(lastState.game.phase) && !isFxRunning(lastState)) render(lastState);
+    // Neither does the end of the reveal.
+    if (screen === 'reveal' && lastState && !isRevealing(lastState.game, serverNow())) render(lastState);
     updateCountdowns($('tv'));
     updateHuntBars();
     updateForce();
@@ -188,7 +192,10 @@ function render(state) {
   else if (state.round && isBreak(phase) && isFxRunning(state)) renderRound(state);
   else if (phase === 'break_distribute') renderDistribute(state);
   else if (phase === 'break_drink') renderDrink(state);
-  else renderOther(state);
+  else if (phase === 'cashout') renderCashout(state);
+  else if (isRevealing(state.game, serverNow())) renderReveal(state);
+  else if (phase === 'tiebreak') renderTiebreak(state);
+  else renderResults(state);
 }
 
 const inkOf = (palette, color) => palette.find((c) => c.color === color)?.ink || '#000000';
@@ -473,12 +480,179 @@ async function onForce(e) {
   });
 }
 
-function renderOther({ game }) {
-  screen = 'other';
-  $('tv').innerHTML = `<div class="tv-center">
-    <h1 class="tv-title">Spiel ${esc(game.code)} läuft</h1>
-    <p class="dim">Diese Ansicht folgt mit den nächsten Meilensteinen.</p>
-    <button class="btn" id="leave" type="button">Anderes Spiel</button>
+// ---------- Cashout ----------
+const balloonsWord = (n) => (n === 1 ? 'Ballon' : 'Ballone');
+const allowedLine = (p) => `darf ${esc(p.hunts_success)} ${balloonsWord(p.hunts_success)} platzen lassen`;
+
+// Built once and only updated in parts, so the PIN field and the button stay in place.
+function renderCashout({ players }) {
+  if (screen !== 'cashout') {
+    screen = 'cashout';
+    $('tv').innerHTML = `<div class="tv-break">
+      <h1 class="tv-title">Kassensturz</h1>
+      <div class="cash-grid" id="tv-cash"></div>
+      <form class="tv-break-foot" id="f-close" autocomplete="off">
+        <span class="dim" id="close-hint"></span>
+        <span class="tv-force">
+          <input class="input tv-pin tv-start-pin" id="close-pin" type="password" inputmode="numeric" maxlength="6" placeholder="PIN" aria-label="Host-PIN" autocomplete="off" ${hostPin ? 'hidden' : ''}>
+          <button class="btn btn-primary" id="close-go" type="submit" disabled>Kassensturz abschliessen</button>
+        </span>
+      </form>
+      <button class="tv-leave" id="leave" type="button">Anderes Spiel</button>
+    </div>`;
+    $('leave').addEventListener('click', () => leaveGame());
+    $('f-close').addEventListener('submit', onCloseCash);
+  }
+  $('tv-cash').innerHTML = players.map((p) => `<div class="cash-row"><span class="sw" style="--c:${esc(p.color)}"></span><div>${esc(p.name)}<small>${allowedLine(p)}</small></div><span class="tick ${p.has_submitted_cash ? '' : 'no'}">${p.has_submitted_cash ? '✓' : '…'}</span></div>`).join('');
+  const all = players.every((p) => p.has_submitted_cash);
+  if (!starting) $('close-go').disabled = !all;
+  const hint = $('close-hint');
+  if (hint.dataset.error !== '1') {
+    hint.textContent = all ? 'Alle haben eingegeben. Beträge bleiben verborgen, bis du abschliesst.' : 'Gib deinen Betrag auf dem Handy ein. Die Beträge bleiben verborgen.';
+  }
+}
+
+async function onCloseCash(e) {
+  e.preventDefault();
+  const pin = hostPin || $('close-pin').value.trim();
+  const hint = $('close-hint');
+  const fail = (reason) => {
+    hint.dataset.error = '1';
+    hint.textContent = ERRORS[reason] || ERRORS.network;
+  };
+  starting = true;
+  $('close-go').disabled = true;
+  delete hint.dataset.error;
+  try {
+    const r = await rpc('host_close_cashout', { p_code: code, p_pin: pin });
+    if (r.ok) {
+      hostPin = pin;
+      storeSet(pinKey(code), pin);
+      await sync.refresh();
+    } else if (r.reason === 'bad_pin') {
+      hostPin = null;
+      storeRemove(pinKey(code));
+      $('close-pin').hidden = false;
+      fail('wrong_pin');
+    } else if (r.reason !== 'wrong_phase') {
+      fail(r.reason);
+    }
+  } catch (err) {
+    console.warn(err);
+    fail('network');
+  } finally {
+    starting = false;
+    if ($('close-go')) $('close-go').disabled = false;
+  }
+}
+
+// The amounts count up by the server's clock, so a reload continues instead of restarting.
+function paintCount(start) {
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const part = reduce ? 1 : Math.max(0, Math.min(1, (serverNow() - start) / CASH_COUNT_MS));
+  document.querySelectorAll('[data-count]').forEach((el) => {
+    el.textContent = money(Math.round(Number(el.dataset.count) * part));
+  });
+  if (part < 1 && screen === 'reveal') requestAnimationFrame(() => paintCount(start));
+}
+
+function renderReveal({ game, players }) {
+  if (screen === 'reveal') return;
+  screen = 'reveal';
+  const total = players.reduce((sum, p) => sum + p.cash_cents, 0);
+  const tie = game.phase === 'tiebreak';
+  $('tv').innerHTML = `<div class="tv-break">
+    <h1 class="tv-title">Kassensturz</h1>
+    <div class="cash-grid">${players.map((p) => `<div class="cash-row"><span class="sw" style="--c:${esc(p.color)}"></span><div>${esc(p.name)}<small>${allowedLine(p)}</small></div><span class="val" data-count="${esc(p.cash_cents)}"></span></div>`).join('')}</div>
+    <div class="tv-break-foot">
+      <span>Summe aller Eingaben: <b class="tv-sum">${money(total)}</b> von max. ${money(game.config.coins_total_cents)}</span>
+      <span class="tv-next">${tie ? 'Gleichstand! Powersudoku' : 'Rangliste'} in <b data-cd="${new Date(game.phase_deadline).getTime()}" data-fmt="s"></b> s</span>
+    </div>
+  </div>`;
+  updateCountdowns($('tv'));
+  paintCount(new Date(game.phase_started_at).getTime());
+}
+
+// ---------- Tiebreak ----------
+function renderTiebreak({ game, round, players }) {
+  if (screen !== 'tiebreak') {
+    screen = 'tiebreak';
+    $('tv').innerHTML = `<div class="tv-break">
+      <div class="tv-break-head"><h1 class="tv-title">Powersudoku</h1>
+        <span class="tv-label">Limit <b class="tv-break-cd"><span data-cd="${new Date(round.deadline).getTime()}"></span></b></span></div>
+      <p class="dim">Gleicher Betrag, gleiches Rätsel. Wer in seiner Gruppe zuerst fertig ist, beendet das Powersudoku für die Gruppe.</p>
+      <div class="tb-groups" id="tb-groups"></div>
+      <button class="tv-leave" id="leave" type="button">Anderes Spiel</button>
+    </div>`;
+    $('leave').addEventListener('click', () => leaveGame());
+    updateCountdowns($('tv'));
+  }
+  const open = [...round.givens].filter((d) => d === '0').length;
+  const groups = new Map();
+  for (const p of players) {
+    if (p.tiebreak_group === null) continue;
+    if (!groups.has(p.tiebreak_group)) groups.set(p.tiebreak_group, []);
+    groups.get(p.tiebreak_group).push(p);
+  }
+  const ordered = [...groups.entries()].sort((a, b) => a[0] - b[0]);
+  $('tb-groups').innerHTML = ordered.map(([no, members]) => {
+    const winner = members.find((p) => p.tiebreak_finished_at);
+    return `<div class="tv-panel"><h2 class="tv-label">Gruppe ${esc(no)} · ${money(members[0].cash_cents)}${winner ? ' · fertig' : ''}</h2>
+      ${members.map((p) => `<div class="tb-row"><span class="tb-name">${p === winner ? '✓ ' : ''}${esc(p.name)}</span><span class="mono">${esc(p.tiebreak_correct)}/${open}</span></div>
+      <div class="prog" style="--c:${esc(p.color)}"><i style="width:${(100 * p.tiebreak_correct) / open}%"></i></div>`).join('')}
+    </div>`;
+  }).join('');
+}
+
+// ---------- Results ----------
+const AWARDS = [
+  ['lines', 'Linien-König', (w) => `${w.value} Linien`],
+  ['hunter', 'Jagd-Profi', (w) => `${w.value} von ${w.total}`],
+  ['errors', 'Fehlerteufel', (w) => `${w.value} Fehler`],
+  ['magnet', 'Shot-Magnet', (w) => `${w.value} erhalten`],
+  ['generous', 'Grosszügigster', (w) => `${w.value} verteilt`],
+];
+const PODIUM_HEIGHTS = { 1: 460, 2: 340, 3: 260 };
+
+const clockOf = (seconds) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+
+function renderResults({ players, palette, stats }) {
+  if (screen === 'results') return;
+  screen = 'results';
+  const byId = new Map(players.map((p) => [p.id, p]));
+  const statOf = new Map(stats.players.map((s) => [s.player_id, s]));
+  const ranked = [...players].sort((a, b) => a.final_rank - b.final_rank);
+  const pod = (p) => `<div class="pod" style="--c:${esc(p.color)};--ink:${esc(inkOf(palette, p.color))};height:${PODIUM_HEIGHTS[p.final_rank]}px"><b>${esc(p.final_rank)}</b><span class="pod-name">${esc(p.name)}</span><span class="pod-cash">${money(p.cash_cents)}</span></div>`;
+  // Second, first, third: the winner stands in the middle.
+  const podium = [ranked[1], ranked[0], ranked[2]].filter(Boolean).map(pod).join('');
+  const rows = ranked.map((p) => {
+    const s = statOf.get(p.id);
+    return `<tr><td class="l">${esc(p.final_rank)}</td>
+      <td class="l"><span class="sw" style="--c:${esc(p.color)}"></span>${esc(p.name)}${p.rank_by_lot ? '<span class="lot">Los</span>' : ''}</td>
+      <td>${money(p.cash_cents)}</td><td>${esc(s.lines_total)}</td>
+      <td>${s.fastest_line_s === null ? '–' : clockOf(s.fastest_line_s)}</td>
+      <td>${esc(s.hunts_success)}/${esc(s.hunts_started)}</td>
+      <td>${esc(s.errors_total)}</td><td>${esc(s.locks_total)}</td>
+      <td>${esc(s.sips_given)}</td><td>${esc(s.sips_received)}</td></tr>`;
+  }).join('');
+  const awards = AWARDS.filter(([key]) => stats.awards[key]).map(([key, title, detail]) => {
+    const winners = stats.awards[key];
+    // Equal quotes can stand for different numbers of hunts, the quote is what they share.
+    const text = key === 'hunter' && winners.length > 1
+      ? `${Math.round((100 * winners[0].value) / winners[0].total)} %`
+      : detail(winners[0]);
+    return `<div class="award"><span>${title}</span>${winners.map((w) => esc(byId.get(w.player_id).name)).join(', ')}<small>${esc(text)}</small></div>`;
+  }).join('');
+  $('tv').innerHTML = `<div class="res">
+    <div class="res-left">
+      <h1 class="tv-title">Rangliste</h1>
+      <div class="podium">${podium}</div>
+    </div>
+    <div class="res-right">
+      <table class="rtable"><thead><tr><th class="l">Rang</th><th class="l">Name</th><th>Betrag</th><th>Linien</th><th>Schnellste</th><th>Jagden</th><th>Fehler</th><th>Sperren</th><th>Verteilt</th><th>Erhalten</th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="awards">${awards}</div>
+    </div>
+    <button class="tv-leave" id="leave" type="button">Anderes Spiel</button>
   </div>`;
   $('leave').addEventListener('click', () => leaveGame());
 }

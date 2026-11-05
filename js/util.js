@@ -36,6 +36,13 @@ export function storeRemove(key) {
   }
 }
 
+/** Cents as the app shows them everywhere: 137 -> "1.37 €". */
+export const money = (cents) => `${(cents / 100).toFixed(2)} €`;
+
+/** The end of the phase is the end of the reveal; tiebreak and results share that (CLAUDE.md 2.10). */
+export const isRevealing = (game, now) => ['tiebreak', 'results'].includes(game.phase)
+  && !!game.phase_deadline && now < new Date(game.phase_deadline).getTime();
+
 const CONN_TEXT = { ok: 'verbunden', warn: 'verbinde …', error: 'getrennt' };
 
 /** Updates the corner indicator (CLAUDE.md 9.4). */

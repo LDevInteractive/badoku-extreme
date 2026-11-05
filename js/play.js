@@ -44,8 +44,11 @@ let wakeArmed = false;
 // Round state that only lives on this device.
 let sel = -1;
 let flash = -1;
-let busy = false;
 let netMessage = '';
+// Digits go out one after the other. A snapshot can show a digit before its answer arrives,
+// and the player goes on at once; the next digit must wait here, not get lost.
+let digitQueue = Promise.resolve();
+const digitsOnTheirWay = new Set(); // a double tap stays one input (CLAUDE.md 9.4)
 let optimisticRound = null;
 const optimistic = new Map(); // correct entries the next snapshot will confirm
 
@@ -360,17 +363,25 @@ function onCellTap(idx) {
   redraw();
 }
 
-async function onDigitTap(digit) {
+function onDigitTap(digit) {
   const state = lastState;
-  if (busy || sel < 0 || !state?.round || lockedUntil(state)) return;
+  if (sel < 0 || !state?.round || lockedUntil(state)) return;
   const cell = sel;
-  busy = true;
+  const key = `${cell}/${digit}`;
+  if (digitsOnTheirWay.has(key)) return;
+  digitsOnTheirWay.add(key);
+  const round = state.round.id;
+  digitQueue = digitQueue.then(() => sendDigit(round, cell, digit, key));
+}
+
+// By the time the answer arrives the player may have selected another cell, that one stays.
+async function sendDigit(round, cell, digit, key) {
   try {
     const r = await rpc('enter_digit', { p_code: syncedCode, p_token: token, p_cell: cell, p_digit: digit });
     const { me } = lastState;
     if (r.ok && r.result === 'correct') {
-      optimistic.set(cell, digit);
-      sel = -1;
+      if (optimisticRound === round) optimistic.set(cell, digit);
+      if (sel === cell) sel = -1;
       if (r.hunt) {
         localHunt = r.hunt;
         me.hunt = r.hunt;
@@ -391,14 +402,14 @@ async function onDigitTap(digit) {
     } else if (r.reason === 'locked') {
       me.locked_until = r.locked_until;
       sel = -1;
-    } else if (r.reason === 'filled') {
+    } else if (r.reason === 'filled' && sel === cell) {
       sel = -1;
     }
   } catch (e) {
     console.warn(e);
     showNetMessage();
   } finally {
-    busy = false;
+    digitsOnTheirWay.delete(key);
   }
   redraw();
 }

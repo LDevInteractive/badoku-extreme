@@ -11,6 +11,7 @@
 // Options (all optional):
 //   --players N        2 to 8 (default 7)
 //   --speed S          slow | normal | fast: thinking time per digit (default normal)
+//   --think S          mean thinking time per 9x9 digit in seconds, overrides --speed
 //   --scale F          runs F times faster: all times in the config and the bots are divided
 //                      by F; the report converts back to real time (default 1)
 //   --difficulty D     leicht | mittel (default leicht)
@@ -37,19 +38,19 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // Options
 // ---------------------------------------------------------------------------
 
-const SPEED_S = { slow: 14, normal: 9, fast: 5 }; // mean thinking time per 9x9 digit, real seconds
+const SPEED_S = { slow: 16, normal: 12, fast: 8 }; // mean thinking time per 9x9 digit, real seconds
 const SIZE_FACTOR = { 4: 0.4, 6: 0.6, 9: 1 };
 const NAMES = ['Anna', 'Ben', 'Cara', 'Dario', 'Elif', 'Finn', 'Gina', 'Hugo'];
 const COLORS = ['#E5484D', '#F76B15', '#FFC53D', '#30A46C', '#12A594', '#3E63DD', '#8E4EC6', '#D6409F'];
 
 function parseArgs(argv) {
   const o = {
-    players: 7, speed: 'normal', scale: 1, difficulty: 'leicht', trial: false,
+    players: 7, speed: 'normal', think: null, scale: 1, difficulty: 'leicht', trial: false,
     errorRate: 0.05, huntSuccess: 0.75, noBalloon: 0.1, balloons: null,
     pin: '4711', seed: Date.now() % 1e9, maxMinutes: 90,
   };
   const keys = {
-    '--players': ['players', Number], '--speed': ['speed', String], '--scale': ['scale', Number],
+    '--players': ['players', Number], '--speed': ['speed', String], '--think': ['think', Number], '--scale': ['scale', Number],
     '--difficulty': ['difficulty', String], '--error-rate': ['errorRate', Number],
     '--hunt-success': ['huntSuccess', Number], '--no-balloon': ['noBalloon', Number],
     '--balloons': ['balloons', Number], '--pin': ['pin', String], '--seed': ['seed', Number],
@@ -67,6 +68,7 @@ function parseArgs(argv) {
   }
   if (!(o.players >= 2 && o.players <= 8)) throw new Error('--players must be 2 to 8');
   if (!SPEED_S[o.speed]) throw new Error('--speed must be slow, normal or fast');
+  if (o.think !== null && !(o.think > 0)) throw new Error('--think must be more than 0');
   if (!(o.scale >= 1)) throw new Error('--scale must be 1 or more');
   if (!['leicht', 'mittel'].includes(o.difficulty)) throw new Error('--difficulty must be leicht or mittel');
   if (o.huntSuccess + o.noBalloon > 1) throw new Error('--hunt-success + --no-balloon must not exceed 1');
@@ -84,6 +86,7 @@ if (opt.help) {
   console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 30).map((l) => l.replace(/^\/\/ ?/, '')).join('\n'));
   process.exit(0);
 }
+const thinkS = opt.think ?? SPEED_S[opt.speed];
 const rng = makeRng(opt.seed);
 const between = (a, b) => a + (b - a) * rng();
 const realMs = (seconds) => (seconds * 1000) / opt.scale; // real seconds -> wall clock ms
@@ -244,7 +247,7 @@ class Bot {
   thinkMs(size, available) {
     let f = between(0.5, 1.5);
     if (available <= 2) f *= 1.4;
-    return realMs(SPEED_S[opt.speed] * SIZE_FACTOR[size] * this.skill * f);
+    return realMs(thinkS * SIZE_FACTOR[size] * this.skill * f);
   }
 
   async call(fn, extra = {}) {
@@ -501,7 +504,7 @@ function report(bots, defaults) {
   const pad = (v, w) => String(v).padEnd(w);
   const padL = (v, w) => String(v).padStart(w);
   console.log('\n=== Auswertung ===');
-  console.log(`Tempo ${opt.speed}, ${opt.players} Bots, Schwierigkeit ${opt.difficulty}${opt.scale !== 1 ? `, ${opt.scale}× schneller (Zeiten unten auf echt umgerechnet)` : ''}, Seed ${opt.seed}`);
+  console.log(`Tempo ${opt.think ? `${opt.think} s pro Ziffer` : `${opt.speed} (${thinkS} s pro Ziffer)`}, ${opt.players} Bots, Schwierigkeit ${opt.difficulty}${opt.scale !== 1 ? `, ${opt.scale}× schneller (Zeiten unten auf echt umgerechnet)` : ''}, Seed ${opt.seed}`);
   console.log(`Spielcode ${sim.code}, gesamt ${realClock()}, ${requests} Anfragen, ${networkErrors} Netzfehler`);
   console.log('\nRunde        Dauer  Vorgaben  leer  beansprucht  neutral  Jagden  Ende');
   const main = [];

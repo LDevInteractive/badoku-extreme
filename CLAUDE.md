@@ -452,7 +452,7 @@ badoku-extreme/
 │  ├─ tests/rules_test.sql   Szenario-Tests (raise exception bei Fehler)
 │  └─ seed/                  (gitignored) puzzles.sql
 ├─ tools/
-│  ├─ package.json           nur für bots.mjs (@supabase/supabase-js)
+│  ├─ package.json           nur Skripte (keine Abhängigkeiten)
 │  ├─ sudoku-core.mjs
 │  ├─ sudoku-core.test.mjs
 │  ├─ generate-puzzles.mjs

@@ -83,6 +83,14 @@ select size, difficulty, count(*) from public.puzzles group by 1, 2 order by 1, 
 
 Tests des Generators: `node --test tools/*.test.mjs` (oder `npm test` in `tools/`).
 
+## Regeltests (SQL)
+
+`supabase/tests/rules_test.sql` ganz im SQL Editor ausführen (nach allen Migrationen und dem
+Rätsel-Seed). Die Datei spielt die Regeln mit eigenen Testspielen durch und löscht sie danach
+wieder. Erwartete Ausgabe: «Alle Regeltests bestanden: … Prüfungen». Schlägt eine Prüfung fehl,
+bricht alles mit `FAIL: …` ab und es bleibt nichts in der Datenbank zurück. Nicht während eines
+echten Spiels ausführen.
+
 ## Smoke-Test
 
 `index.html` öffnen (auf GitHub Pages oder lokal, siehe unten). Die Karte **Systemcheck** zeigt:

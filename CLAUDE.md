@@ -52,7 +52,7 @@ LOBBY ─► PROBERUNDE 4×4 (zählt nicht) ─► LOBBY (bereit)
 - Ein 4×4-Sudoku (Boxen 2×2), damit alle den Ablauf kennen.
 - Gleiche Mechanik wie das Hauptspiel (Eingabe, Fehler, Sperre, Linie gelöst, Jagd-Animation, Button), aber:
   - Niemand rennt wirklich. Jagd-Zeiten verkürzt (`trial_hunt_duration_s` 15, `trial_hunt_min_press_s` 5).
-  - **Keine Shots, keine Statistik, zählt nicht** zu den 35 Jagden und nicht zum 25-Minuten-Limit.
+  - **Keine Shots, keine Statistik, zählt nicht**: nimmt keinen Ballon aus der Halle und zählt nicht zum 25-Minuten-Limit.
   - Die Jagd-Texte auf dem Handy sagen, dass niemand rennt und dass das Ergebnis nicht zählt.
 - Danach zurück in die Lobby, der Host startet das Hauptspiel oder wiederholt die Proberunde. Sie ist beliebig oft wiederholbar.
 
@@ -62,8 +62,8 @@ LOBBY ─► PROBERUNDE 4×4 (zählt nicht) ─► LOBBY (bereit)
 - **Jede Eingabe wird sofort serverseitig geprüft.** Falsche Ziffern werden nicht übernommen.
 - Nur **Zeilen und Spalten** zählen als Linien (9 + 9 = 18). 3×3-Boxen zählen nicht.
 - **Rundenlimit:** `round_limit_s` = 480 s (8 Min.). Danach werden alle noch offenen Linien neutral aufgedeckt.
-- **Letzte Felder:** Sind nach dem Beanspruchen einer Linie nur noch `auto_reveal_open_cells` = 7 oder weniger Felder offen (für alle sichtbar, eigene Eingaben zählen nicht), wird der Rest sofort neutral aufgedeckt. So lohnt sich Zuwarten weniger: Am Schluss kostet eine Linie nur noch ein bis zwei Tipps, zahlt aber wie jede andere. Gilt nur im Haupt-Sudoku; 0 schaltet die Regel aus. Wird mit derselben Eingabe die letzte Jagd gestartet (§2.8), bleibt das Raster wie es ist.
-- Eine Runde endet, wenn **alle 18 Linien gesperrt** sind (beansprucht oder neutral) oder das Rundenlimit erreicht ist. Laufende Jagden werden immer zuerst abgeschlossen.
+- **Letzte Felder:** Sind nach dem Beanspruchen einer Linie nur noch `auto_reveal_open_cells` = 7 oder weniger Felder offen (für alle sichtbar, eigene Eingaben zählen nicht), wird der Rest sofort neutral aufgedeckt. So lohnt sich Zuwarten weniger: Am Schluss kostet eine Linie nur noch ein bis zwei Tipps, zahlt aber wie jede andere. Gilt nur im Haupt-Sudoku; 0 schaltet die Regel aus.
+- Eine Runde endet, wenn **alle 18 Linien gesperrt** sind (beansprucht oder neutral), das Rundenlimit erreicht ist oder die Halle leer ist (§2.8). Laufende Jagden werden immer zuerst abgeschlossen.
 - Das fertige Raster bleibt nach Rundenende mindestens `round_end_hold_s` = 5 s stehen, damit alle die Lösung sehen, auch wenn keine Jagd mehr läuft. TV und Handys zeigen es; wer auf eine laufende Jagd wartet, sieht auf dem Handy «Runde beendet – warte auf laufende Jagden».
 
 ### 2.5 Fehler & Sperre
@@ -86,16 +86,19 @@ LOBBY ─► PROBERUNDE 4×4 (zählt nicht) ─► LOBBY (bereit)
   - Vollbild-Animation in Grün: «ZEILE 4 GELÖST!» bzw. «SPALTE 7 GELÖST!» (bei beiden: «ZEILE 4 + SPALTE 7»).
   - Countdown `hunt_duration_s` = **50 s** (Server-Frist).
   - Grosser Button **«BALLON IM DEPOT»**, erst nach `hunt_min_press_s` = **10 s** aktiv (Fortschrittsbalken bis dahin). Verhindert Drücken beim Wegrennen.
+  - Darunter, deutlich abgesetzt und kleiner, **«Kein Ballon gefunden»**, ebenfalls erst nach `hunt_min_press_s` aktiv. Das Handy fragt einmal nach («Wirklich nichts gefunden?»), weil es nicht rückgängig zu machen ist.
   - **Regel (analog):** Das Handy bleibt am Tisch.
-- Button vor Fristende gedrückt → **Erfolg**: Der Spieler darf beim Kassensturz einen Ballon mehr platzen lassen.
-- Frist abgelaufen → **Fehlschlag**. Bringt der Spieler trotzdem einen Ballon mit, darf er ihn ins Depot legen, aber er zählt nicht.
+- Button vor Fristende gedrückt → **Erfolg**: Der Spieler darf beim Kassensturz einen Ballon mehr platzen lassen. Der Ballon ist aus der Halle.
+- «Kein Ballon gefunden» → **kein Erfolg**, der Ballon bleibt in der Halle, der Spieler löst sofort weiter.
+- Frist abgelaufen → **Fehlschlag**. Das Handy fragt «Hast du trotzdem einen Ballon mitgebracht?» (Ja / Nein). Ein mitgebrachter Ballon darf ins Depot, zählt aber nicht; bei «Ja» ist er aus der Halle. Bis zur Antwort ist die Eingabe gesperrt. Die Frage bleibt offen bis zum Ende der Pause, unbeantwortet gilt «Nein». In der Proberunde gibt es keine Frage.
 - Während einer eigenen Jagd ist die Eingabe gesperrt.
 - TV zeigt alle laufenden Jagden mit Spielerfarbe und Countdown-Balken.
 
 ### 2.8 Ballone & Spielende
 - In der Halle sind `balloons_total` = **35** Ballone (7 Spieler × 5).
-- **Jede gestartete Jagd** zählt einen Ballon aus der Halle (egal ob Erfolg oder Fehlschlag). TV zeigt «Ballone in der Halle: x».
-- Wird die **35. Jagd gestartet**, endet das Spiel **sofort**: keine Eingaben mehr, laufende Jagden abschliessen, letzte Pause (Shots), dann Kassensturz.
+- Ein Ballon verlässt die Halle, wenn eine Jagd **bestätigt** wird («Ballon im Depot») oder ein verspäteter Jäger angibt, ihn trotzdem mitgebracht zu haben. Wer nichts findet, lässt ihn in der Halle. TV zeigt «Ballone in der Halle: x».
+- Eine Jagd startet, solange noch mindestens ein Ballon in der Halle ist. Es dürfen mehr Jagden laufen, als Ballone übrig sind: **Wettrennen**, wer zuerst bestätigt, bekommt ihn. Der TV zeigt dann «Wettrennen um den letzten Ballon!».
+- Verlässt der **letzte Ballon** die Halle, endet das Spiel **sofort**: keine Eingaben mehr, die übrigen laufenden Jagden enden mit «Halle leer» (zählen nicht als Erfolg), letzte Pause (Shots), dann Kassensturz.
 - **Zeitlimit:** Ein neues Sudoku darf nur starten, solange seit Start des ersten Haupt-Sudokus **weniger als `game_limit_s` = 1500 s (25 Min.)** vergangen sind (Pausen zählen mit). Ein Sudoku, das bei 24:59 startet, wird fertig gespielt.
 - Danach: letzte Pause, dann Kassensturz.
 
@@ -123,8 +126,12 @@ Zwei Teilphasen:
 - Geplatzt und gezählt wird **am Tisch, analog**. Die App kennt die Münzen nicht.
 - Jeder gibt auf seinem Handy seinen **Gesamtbetrag** ein (Format `1.37` → intern Cent, ganzzahlig, 0 bis `cash_max_cents`).
 - TV zeigt, wer schon eingegeben hat (✓), **Beträge bleiben verborgen**. Korrektur möglich, bis der Host mit PIN **«Kassensturz abschliessen»** drückt (nur möglich, wenn alle eingegeben haben).
-- Danach: Beträge werden auf dem TV mit Hochzähl-Animation enthüllt. Plausibilitätsanzeige: «Summe aller Eingaben: x.xx € von max. `coins_total_cents`».
-- Nach `cash_reveal_s` = 10 s folgt von selbst das Powersudoku oder die Rangliste, ohne Knopf. Die Limite des Powersudokus beginnt erst danach; bis dahin zeigen die Handys der Beteiligten einen Countdown, die übrigen «Schau auf den TV».
+- Auf dem Handy steht ein gesendeter Betrag gross da («Gesendet: 1.45 €»), damit ein Tippfehler vor dem Abschliessen auffällt. Nach dem Abschliessen gibt es in der App keine Korrektur mehr, einen Fehler korrigiert der Spielleiter analog.
+- Danach die Enthüllung auf dem TV, Säulen und Tabelle nebeneinander:
+  1. `cash_count_s` = 8 s: Alle Säulen steigen gleich schnell in Cent-Schritten, ohne Namen und Farben. Die Säulen stehen nach Betrag sortiert (Letzter links), damit niemand die Namen errät.
+  2. Danach alle `cash_step_s` = 5 s ein Platz, vom letzten zum ersten: Säule und Tabellenzeile bekommen Farbe und Namen. Gleiche Beträge werden gemeinsam aufgedeckt und mit «Gleichstand» markiert.
+  3. Der erste Platz bleibt noch einen Schritt stehen. Plausibilitätsanzeige: «Summe aller Eingaben: x.xx € von max. `coins_total_cents`».
+- Danach folgt von selbst das Powersudoku oder die Rangliste, ohne Knopf. Die Limite des Powersudokus beginnt erst danach; bis dahin zeigen die Handys der Beteiligten einen Countdown, die übrigen «Schau auf den TV».
 
 ### 2.11 Rangliste & Powersudoku
 - Rang nach Betrag absteigend.
@@ -196,10 +203,10 @@ Zwei Teilphasen:
 ```
 lobby ──host_start_trial──► trial_running ──(alle Linien / Limit)──► trial_ending ──(Jagden fertig)──► lobby (trial_done = true)
 lobby ──host_start_main───► round_running
-round_running ──(18 Linien gesperrt | Rundenlimit | 35. Jagd gestartet)──► round_ending
+round_running ──(18 Linien gesperrt | Rundenlimit | Halle leer)──► round_ending
 round_ending ──(keine aktive Jagd und round_end_hold_s vorbei)──► break_distribute   (überspringen, wenn niemand Shots hat → break_drink)
 break_distribute ──(alle verteilt | Timeout → Zufall)──► break_drink
-break_drink ──(alle bereit | Host erzwingt)──► round_running   wenn hunts_started < 35 UND Spielzeit < 25 Min.
+break_drink ──(alle bereit | Host erzwingt)──► round_running   wenn Ballone in der Halle UND Spielzeit < 25 Min.
                                             └─► cashout          sonst
 cashout ──host_close_cashout──► tiebreak (falls Gleichstand) ──(alle Gruppen fertig)──► results
                              └─► results (kein Gleichstand)
@@ -244,7 +251,7 @@ Alle Tabellen im Schema `public`, Primärschlüssel `uuid default gen_random_uui
 | main_started_at | timestamptz | Start des ersten Haupt-Sudokus (25-Min.-Limit) |
 | phase_started_at | timestamptz | |
 | phase_deadline | timestamptz null | für Timeouts |
-| hunts_started | int | 0…35 |
+| hunts_started | int | gestartete Haupt-Jagden (Statistik) |
 | created_at | timestamptz | |
 
 **`game_secrets`** (kein Zugriff): game_id PK, host_pin_hash.
@@ -272,7 +279,7 @@ UNIQUE (game_id, name), UNIQUE (game_id, color).
 
 **`entries`**: round_id, player_id, cell int, digit int, entered_at. PK (round_id, player_id, cell). Nur korrekte Eingaben.
 
-**`hunts`**: id, game_id, round_id, player_id, kind ('main'|'trial'), lines_label text (z.B. «Zeile 4 + Spalte 7»), started_at, min_press_at, deadline, status ('active'|'success'|'failed'), pressed_at null.
+**`hunts`**: id, game_id, round_id, player_id, kind ('main'|'trial'), lines_label text (z.B. «Zeile 4 + Spalte 7»), started_at, min_press_at, deadline, status ('active'|'success'|'failed'), pressed_at null, end_reason null ('pressed'|'no_balloon'|'timeout'|'hall_empty'), brought boolean null (Antwort nach Fristablauf), ended_at null. Ballone in der Halle = `balloons_total` − bestätigte Jagden − verspätete mit `brought`.
 
 **`sip_transfers`**: id, game_id, round_no, from_player, to_player, amount int, is_random boolean, created_at.
 
@@ -300,7 +307,8 @@ Indizes auf alle `game_id`/`round_id`-Fremdschlüssel.
   "distribute_timeout_s": 60,
   "force_continue_after_s": 120,
   "tiebreak_limit_s": 90,
-  "cash_reveal_s": 10,
+  "cash_count_s": 8,
+  "cash_step_s": 5,
   "award_min_hunts": 2,
   "difficulty": "leicht",
   "cash_max_cents": 1000,
@@ -347,6 +355,8 @@ Alle Funktionen: `SECURITY DEFINER`, `SET search_path = public, extensions`, Rü
 | `host_start_main(p_code, p_pin)` | TV | Hauptspiel starten |
 | `enter_digit(p_code, p_token, p_cell int, p_digit int)` | Handy | Eingabe (§8.2) |
 | `hunt_press(p_code, p_token)` | Handy | «Ballon im Depot» |
+| `hunt_no_balloon(p_code, p_token)` | Handy | «Kein Ballon gefunden» (erst nach `hunt_min_press_s`) |
+| `hunt_answer(p_code, p_token, p_brought boolean)` | Handy | Antwort nach Fristablauf: Ballon trotzdem mitgebracht? |
 | `give_sip(p_code, p_token, p_target uuid)` | Handy | 1 Shot verteilen |
 | `give_sips_random(p_code, p_token)` | Handy | Rest zufällig verteilen |
 | `confirm_ready(p_code, p_token)` | Handy | «Getrunken & bereit» |
@@ -356,19 +366,19 @@ Alle Funktionen: `SECURITY DEFINER`, `SET search_path = public, extensions`, Rü
 | `server_time()` | alle | `now()` (für Smoke-Test) |
 
 ### 8.1 `get_state` – Inhalt
-- `server_now`, `game` (Phase, Version, Config, Zeiten, `hunts_started`, `balloons_left`, Spielzeit, Rundenzahl)
+- `server_now`, `game` (Phase, Version, Config, Zeiten, `hunts_started`, `balloons_left` = Ballone in der Halle, Spielzeit, Rundenzahl)
 - `round`: `kind`, `size`, `givens`, `revealed`, `started_at`, `deadline` (**nie die Lösung**)
 - `lines`: alle gesperrten Linien der Runde (Typ, Index, Status, Spieler, `claimed_at`, `origin_cell`)
 - `players` (öffentlich): id, Name, Farbe, Zähler, `ready`, `has_submitted_cash`, `locked_until`, aktive Jagd (Frist), Shots dieser Pause (zu verteilen/erhalten), `cash_cents` **nur ab Phase `tiebreak`/`results`**, `final_rank`, Tiebreak-Gruppe/-Fortschritt
 - `hunts_active`, `sip_transfers` der aktuellen Pause, `ticker` (letzte 20 Events)
-- `me` (nur mit gültigem Token): eigene Einträge der Runde, Fehlerzähler + Fensterstart, `locked_until`, aktive Jagd (`min_press_at`, `deadline`, Label), `sips_to_distribute`, `sips_to_drink` + Absender, `balloons_allowed`, `cash_cents`
+- `me` (nur mit gültigem Token): eigene Einträge der Runde, Fehlerzähler + Fensterstart, `locked_until`, aktive Jagd (`min_press_at`, `deadline`, Label), letzte beendete Jagd (`end_reason`, `brought`), offene Frage nach Fristablauf (`hunt_question`), `sips_to_distribute`, `sips_to_drink` + Absender, `balloons_allowed`, `cash_cents`
 - `stats` (nur Phase `results`): siehe §2.12
 
 ### 8.2 `enter_digit` – Ablauf (exakt so umsetzen)
 1. Spielzeile `FOR UPDATE` sperren; Token prüfen; abgelaufene Fristen dieses Spielers bereinigen.
 2. Phase muss `round_running`, `trial_running` oder `tiebreak` (Spieler in aktiver Gruppe, Gruppe nicht beendet) sein.
 3. `now() < locked_until` → `{ok:false, reason:'locked', locked_until}`.
-4. Aktive Jagd → `{ok:false, reason:'hunting'}`.
+4. Aktive Jagd → `{ok:false, reason:'hunting'}`. Offene Frage nach Fristablauf in dieser Runde → `{ok:false, reason:'question_open'}`.
 5. Zelle schon belegt (Vorgabe, aufgedeckt, eigene Eingabe) → `{ok:false, reason:'filled'}`.
 6. **Falsch:** `errors_total++`; Fenster: falls leer oder `now() − err_window_started_at > error_window_s` → Start = now, Zähler = 1, sonst Zähler++. Zähler ≥ `error_max` → `locked_until = now() + lock_s`, `locks_total++`, Fenster zurücksetzen, Ticker-Event. → `{ok:true, result:'wrong', error_count, locked_until}`.
 7. **Richtig:** Eintrag speichern. Bei `tiebreak`: Zähler/Zeit aktualisieren, bei vollständigem Raster `tiebreak_finished_at` setzen und Gruppe beenden → fertig.
@@ -376,15 +386,14 @@ Alle Funktionen: `SECURITY DEFINER`, `SET search_path = public, extensions`, Rü
 9. Falls beansprucht (1 oder 2 Linien):
    - `lines` einfügen (Status `claimed`, `origin_cell` = eingegebene Zelle, Ziffern aus Lösung), `rounds.revealed` aktualisieren, Ticker-Event.
    - Haupt-Sudoku: `lines_claimed += n`, `sips_to_distribute += n × sips_per_line`.
-   - Jagd erzeugen, falls `hunts_started < balloons_total` (Haupt) bzw. immer (Probe, Kind `trial`, zählt nicht): `min_press_at`, `deadline` aus Config; `games.hunts_started++` und `players.hunts_started++` (nur Haupt).
-   - Wurde damit die **35. Jagd** gestartet → Phase sofort `round_ending`.
-10. **Letzte Felder (§2.4), nur Haupt-Sudoku, nur nach einer Beanspruchung und wenn die Runde nicht schon durch die letzte Jagd beendet wurde:** höchstens `auto_reveal_open_cells` Zellen in `revealed` offen → `revealed` = Lösung, Ticker-Event. **Neutral-Prüfung:** Jede noch nicht gesperrte Linie, deren Zellen alle in `revealed` gefüllt sind → `lines` mit Status `neutral` einfügen.
+   - Jagd erzeugen, falls noch Ballone in der Halle sind (Haupt) bzw. immer (Probe, Kind `trial`, zählt nicht): `min_press_at`, `deadline` aus Config; `games.hunts_started++` und `players.hunts_started++` (nur Haupt).
+10. **Letzte Felder (§2.4), nur Haupt-Sudoku, nur nach einer Beanspruchung:** höchstens `auto_reveal_open_cells` Zellen in `revealed` offen → `revealed` = Lösung, Ticker-Event. **Neutral-Prüfung:** Jede noch nicht gesperrte Linie, deren Zellen alle in `revealed` gefüllt sind → `lines` mit Status `neutral` einfügen.
 11. Alle 2N Linien gesperrt → Phase `round_ending`/`trial_ending`.
 12. `version++`. Rückgabe `{ok:true, result:'correct', claimed:[…], hunt:{…}|null}`.
 
 ### 8.3 Übergang `break_drink` → weiter
 Wenn alle `ready` (oder Host erzwingt): Pausen-Zähler zurücksetzen (`sips_to_drink`, `ready`). Dann:
-- `hunts_started >= balloons_total` → `cashout`
+- Halle leer → `cashout`
 - `now() − main_started_at < game_limit_s` → neue Runde (`round_no++`, neues Rätsel, `round_running`)
 - sonst → `cashout`
 
@@ -438,7 +447,8 @@ badoku-extreme/
 │  │  ├─ 010_round_end_hold.sql  Fertiges Raster bleibt am Rundenende sichtbar
 │  │  ├─ 011_trial_rpc.sql   Proberunde: host_start_trial, finish_trial, zurück in die Lobby
 │  │  ├─ 012_cashout_rpc.sql Kassensturz, Powersudoku, Rangliste, Statistik
-│  │  └─ 013_auto_reveal.sql Die letzten Felder einer Runde füllen sich von selbst
+│  │  ├─ 013_auto_reveal.sql Die letzten Felder einer Runde füllen sich von selbst
+│  │  └─ 014_balloons_found.sql Nur Ballone aus der Halle zählen, «Kein Ballon», Wettrennen, Enthüllung
 │  ├─ tests/rules_test.sql   Szenario-Tests (raise exception bei Fehler)
 │  └─ seed/                  (gitignored) puzzles.sql
 ├─ tools/
@@ -457,11 +467,11 @@ Alle Pfade **relativ** (GitHub Pages läuft unter `/badoku-extreme/`).
 | Beitritt | Code (aus `?g=` vorausgefüllt), Name, Farbwahl (belegte Farben ausgegraut) |
 | Lobby | «Warte auf Start», Mitspielerliste, Hinweis Wake Lock; erster Tipp aktiviert Wake Lock |
 | Sudoku | Raster (füllt Bildschirmbreite), Zahlenblock 1–N unten, Zelle antippen → Zahl tippen. Vorgaben fett, eigene Eingaben in eigener Farbe, aufgedeckte Linien eingefärbt (Spielerfarbe bzw. grau). Fehler: Zelle rot aufblitzen + Vibration, 3 Fehlerpunkte sichtbar. Sperre: Overlay mit Countdown. Kopfzeile: Rundentimer, Ballone in der Halle, eigene Linien. |
-| Jagd | Vollbild grün, Text «ZEILE 4 GELÖST!», grosser Countdown, Button erst nach 10 s aktiv (Fortschritt), danach riesig. Erfolg ✔ / Zeit abgelaufen ✗, je 2 s, dann zurück. Ton + Vibration beim Start. |
+| Jagd | Vollbild grün, Text «ZEILE 4 GELÖST!», grosser Countdown, Button erst nach 10 s aktiv (Fortschritt), danach riesig; darunter «Kein Ballon gefunden» mit Nachfrage. Erfolg ✔, Kein Ballon und Halle leer je 2 s, dann zurück. Zeit abgelaufen ✗ mit der Frage «Ballon trotzdem mitgebracht?» (Ja / Nein). Vibration beim Start, das Handy bleibt stumm. |
 | Rundenende | Fertiges Raster ohne Eingabe, solange keine Jagd läuft (§2.4); sonst «Runde beendet – warte auf laufende Jagden» |
 | Verteilen | «Du hast X Shots zu verteilen», grosse Kacheln pro Mitspieler (Farbe, Name, bereits erhalten), Tippen = +1, Button «Zufall», Rest-Zähler |
 | Trinken | «Du musst X Shots trinken» + Absender, Button «Getrunken & bereit» |
-| Kassensturz | «Du darfst N Ballone platzen lassen», Betragseingabe (Dezimaltastatur, `inputmode="decimal"`, Komma und Punkt erlaubt), Senden, Ändern bis abgeschlossen |
+| Kassensturz | «Du darfst N Ballone platzen lassen», Betragseingabe (Dezimaltastatur, `inputmode="decimal"`, Komma und Punkt erlaubt), Senden; danach «Gesendet: 1.45 €» gross, Ändern bis abgeschlossen |
 | Powersudoku | 6×6-Raster, falls in einer Gruppe; sonst «Zuschauen» |
 | Resultate | eigener Rang, Betrag, persönliche Statistik |
 
@@ -472,9 +482,9 @@ Grosse Touch-Ziele (min. 48 px), kein Zoom (`touch-action: manipulation`), keine
 |---|---|
 | Start | «Neues Spiel» (PIN setzen, Schwierigkeit wählen) oder «Verbinden» (Code + PIN) |
 | Lobby | Riesiger QR-Code + Code, Spieler mit Farben, Buttons «Proberunde» / «Hauptspiel starten». Die PIN wird nur beim Erstellen oder Verbinden eingegeben, der TV merkt sie sich pro Spiel im `localStorage`, «Anderes Spiel» löscht sie. |
-| Runde | Grosses Raster: nur Vorgaben + aufgedeckte Linien (farbig/grau). Seitenleiste: Spieltimer (25:00 ab Hauptstart), Rundentimer (8:00), **Ballone in der Halle**, laufende Jagden mit Countdown-Balken in Spielerfarbe, Scoreboard (Linien, erfolgreiche Jagden), Ticker |
+| Runde | Grosses Raster: nur Vorgaben + aufgedeckte Linien (farbig/grau). Seitenleiste: Spieltimer (25:00 ab Hauptstart), Rundentimer (8:00), **Ballone in der Halle**, laufende Jagden mit Countdown-Balken in Spielerfarbe (bei mehr Jagden als Ballonen «Wettrennen»), Scoreboard (Linien, erfolgreiche Jagden), Ticker. Ist die Halle leer: Banner «HALLE LEER!» über dem Raster. |
 | Pause | Matrix/Liste «wer gibt wem», Status pro Spieler (verteilt ✓ / bereit ✓), nach 120 s Button «Weiter erzwingen» |
-| Kassensturz | Pro Spieler «darf N Ballone platzen lassen» + Eingabestatus ✓, Button «Kassensturz abschliessen» (aktiv, wenn alle eingegeben haben), danach Hochzähl-Animation und Summe |
+| Kassensturz | Pro Spieler «darf N Ballone platzen lassen» + Eingabestatus ✓, Button «Kassensturz abschliessen» (aktiv, wenn alle eingegeben haben), danach Enthüllung mit Säulen und Tabelle (§2.10) und Summe |
 | Powersudoku | Gruppen nebeneinander, Fortschrittsbalken pro Spieler, Countdown |
 | Resultate | Podest Top 3, Tabelle Rang 1–7, Auszeichnungen, Statistik |
 
@@ -501,7 +511,7 @@ Gilt auf dem TV und auf allen Handys. Das Handy des Lösers zeigt stattdessen so
 ## 10. Tests
 
 1. **Rätsel:** `node --test tools/*.test.mjs` – Generator-Eigenschaften (§7).
-2. **SQL-Szenarien:** `supabase/tests/rules_test.sql`, im SQL-Editor ausführbar, räumt danach auf. Deckt ab: Beitritt (Name/Farbe doppelt), Fehlerfenster inkl. Zurücksetzen nach 30 s und Sperre, Beanspruchen, gleichzeitige Zeile + Spalte (1 Jagd, 2 Linien), Neutral-Regel, «Pech gehabt»-Fall, Jagd zu früh / rechtzeitig / zu spät (Zeitstempel im Test direkt manipulieren), 35-Jagden-Ende, Zeitlimit-Entscheid, Shots (nicht an sich selbst, Zufall), Kassensturz-Sichtbarkeit, Tiebreak-Ranking inkl. Los.
+2. **SQL-Szenarien:** `supabase/tests/rules_test.sql`, im SQL-Editor ausführbar, räumt danach auf. Deckt ab: Beitritt (Name/Farbe doppelt), Fehlerfenster inkl. Zurücksetzen nach 30 s und Sperre, Beanspruchen, gleichzeitige Zeile + Spalte (1 Jagd, 2 Linien), Neutral-Regel, «Pech gehabt»-Fall, Jagd zu früh / rechtzeitig / zu spät (Zeitstempel im Test direkt manipulieren), Kein Ballon, Frage nach Fristablauf, Wettrennen und Ende bei leerer Halle, Zeitlimit-Entscheid, Shots (nicht an sich selbst, Zufall), Kassensturz-Sichtbarkeit, Tiebreak-Ranking inkl. Los.
 3. **Bot-Simulation:** `node tools/bots.mjs --players 7 --speed normal` erstellt ein Spiel mit verkürzter Config (optional), lässt 7 Bots mit realistischem Tempo, Fehlerquote und Jagd-Erfolgsquote spielen, ruft `tick` auf und gibt am Ende aus: Dauer pro Runde, Linien pro Spieler, Jagden, Spielverlauf. Ziel: Vorgaben-Anzahl so justieren, dass eine Runde ca. 4–6 Min. dauert.
 4. **Generalprobe:** 3–4 echte Handys (iOS + Android), Wake Lock 2 Min. prüfen.
 

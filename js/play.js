@@ -59,6 +59,9 @@ let localResult = null;
 let pressBusy = false;
 let vibratedFor = null;
 let lateTickFor = null;
+let noFindAsk = null; // started_at of the hunt whose «Kein Ballon» asks for confirmation
+let localAnswer = null; // { key, brought, at } after the question of a late hunt
+let answerBusy = false;
 
 // Break state that only lives on this device: tiles count up at once, taps go out one
 // after the other, and a snapshot that is on its way cannot take a shot back.
@@ -126,6 +129,12 @@ function reconcileHunt(me) {
     if (me.hunt || over) localHunt = null;
     else me.hunt = localHunt;
   }
+  // An answer given here wins over a snapshot that was sent before it.
+  if (localAnswer) {
+    if (me.hunt_question && sameTime(me.hunt_question.started_at, localAnswer.key)) me.hunt_question = null;
+    if (me.hunt && sameTime(me.hunt.started_at, localAnswer.key)) me.hunt = null;
+  }
+  if (noFindAsk && !(me.hunt && sameTime(me.hunt.started_at, noFindAsk))) noFindAsk = null;
 }
 
 function onState(state) {
@@ -415,30 +424,59 @@ async function sendDigit(round, cell, digit, key) {
 }
 
 // ---------- Hunt ----------
+// The late hunter answers as long as the server keeps the question open (CLAUDE.md 2.7).
+const QUESTION_PHASES = ['round_running', 'round_ending', 'break_distribute', 'break_drink'];
+
 function huntView(me) {
+  const trial = (h) => h.kind === 'trial';
+  if (me.hunt && msUntil(me.hunt.deadline) > 0) {
+    return { kind: 'active', hunt: me.hunt, asking: noFindAsk === me.hunt.started_at };
+  }
   if (me.hunt) {
-    return msUntil(me.hunt.deadline) > 0
-      ? { kind: 'active', hunt: me.hunt }
-      : { kind: 'failed', key: me.hunt.started_at, trial: me.hunt.kind === 'trial' };
+    // Over by this phone's clock; the server closes it with the next tick.
+    return trial(me.hunt)
+      ? { kind: 'failed', key: me.hunt.started_at, trial: true }
+      : { kind: 'question', key: me.hunt.started_at };
+  }
+  const phase = lastState?.game.phase;
+  if (me.hunt_question && QUESTION_PHASES.includes(phase)) return { kind: 'question', key: me.hunt_question.started_at };
+  if (localAnswer && serverNow() - localAnswer.at < HUNT_RESULT_MS) {
+    return { kind: localAnswer.brought ? 'brought' : 'nofind', key: `${localAnswer.key}|answer` };
   }
   const last = me.last_hunt;
   if (last && serverNow() - new Date(last.ended_at).getTime() < HUNT_RESULT_MS) {
-    return { kind: last.status === 'success' ? 'success' : 'failed', key: last.started_at, trial: last.kind === 'trial' };
+    const kind = last.status === 'success' ? 'success'
+      : last.end_reason === 'no_balloon' ? 'nofind'
+        : last.end_reason === 'hall_empty' ? 'empty'
+          : 'failed';
+    // A late hunt of the main game ends with the question, never with the plain failure screen.
+    if (kind === 'failed' && !trial(last) && last.end_reason === 'timeout') return null;
+    return { kind, key: last.started_at, trial: trial(last) };
   }
   return null;
 }
+
+const calmScreen = (mark, title, text) => `<div class="overlay ov-calm"><div class="ov-mark">${mark}</div><h1 class="ph-title">${title}</h1><p class="rule">${text}</p></div>`;
 
 const ms = (time) => new Date(time).getTime();
 
 function renderHunt(view) {
   if (view.kind === 'active') {
     const { hunt } = view;
-    const drawn = draw('hunt', `active|${hunt.started_at}`, () => `<div class="overlay ov-hunt">
+    const drawn = draw('hunt', `active|${hunt.started_at}|${view.asking}`, () => `<div class="overlay ov-hunt">
       <h1 class="ph-title">${esc(hunt.lines_label)} gelöst!</h1>
       <div class="cd"><span data-cd="${ms(hunt.deadline)}" data-fmt="s"></span></div>
       <p class="rule" id="hunt-rule">${hunt.kind === 'trial' ? 'Proberunde: Niemand rennt. Warte, bis der Knopf bereit ist, und drücke ihn.' : 'Handy liegen lassen. Ballon holen. Ab ins Depot.'}</p>
       <button class="hunt-btn" id="hunt-btn" data-press type="button" disabled><i class="fill"></i><span>BALLON IM DEPOT</span></button>
-    </div>`);
+      <div class="hunt-gap"></div>
+      <button class="nofind-btn" id="nofind-btn" data-nofind type="button" disabled>Kein Ballon gefunden</button>
+    </div>${view.asking ? `<div class="dimmer" data-nofind-no></div><div class="sheet" role="dialog" aria-label="Kein Ballon gefunden">
+      <h2>Wirklich nichts gefunden?</h2>
+      <p>${hunt.kind === 'trial' ? 'In der Proberunde zählt nichts davon.' : 'Der Ballon bleibt in der Halle, deine Jagd zählt als nicht erfolgreich.'} Danach löst du sofort weiter.</p>
+      <button class="big-yes" id="nofind-yes" data-nofind-yes type="button">Ja, nichts gefunden</button>
+      <button class="big-no" data-nofind-no type="button">Zurück zur Jagd</button>
+      <p class="form-err" id="nofind-err" role="alert"></p>
+    </div>` : ''}`);
     if (drawn) updateCountdowns($('phone'));
     if (vibratedFor !== hunt.started_at) {
       vibratedFor = hunt.started_at;
@@ -451,6 +489,9 @@ function renderHunt(view) {
     btn.disabled = !ready;
     btn.classList.toggle('ready', ready);
     btn.querySelector('.fill').style.width = ready ? '0' : `${Math.min(100, (100 * waited) / span)}%`;
+    const nofind = $('nofind-btn');
+    nofind.disabled = !ready;
+    nofind.classList.toggle('ready', ready);
     return;
   }
   if (view.kind === 'success') {
@@ -459,7 +500,32 @@ function renderHunt(view) {
       : '<div class="overlay ov-hunt"><div class="ov-mark">✔</div><h1 class="ph-title">Ballon zählt!</h1><p class="rule">Du darfst beim Kassensturz einen Ballon mehr platzen lassen.</p></div>'));
     return;
   }
-  draw('hunt', `failed|${view.key}`, () => `<div class="overlay ov-fail"><div class="ov-mark">✗</div><h1 class="ph-title">Zeit abgelaufen</h1><p class="rule">${view.trial ? 'Im Spiel würde ein Ballon jetzt nicht mehr zählen.' : 'Ein mitgebrachter Ballon darf ins Depot, zählt aber nicht.'}</p></div>`);
+  if (view.kind === 'nofind') {
+    draw('hunt', `nofind|${view.key}`, () => calmScreen('–', 'Kein Ballon', view.trial ? 'Im Spiel bliebe der Ballon in der Halle.' : 'Er bleibt in der Halle. Weiter geht\'s!'));
+    return;
+  }
+  if (view.kind === 'brought') {
+    draw('hunt', `brought|${view.key}`, () => '<div class="overlay ov-fail"><div class="ov-mark">✗</div><h1 class="ph-title">Ab ins Depot</h1><p class="rule">Der Ballon zählt nicht. Weiter geht\'s!</p></div>');
+    return;
+  }
+  if (view.kind === 'empty') {
+    const taker = lastState.ticker.find((e) => e.type === 'hall_empty')?.payload.name;
+    draw('hunt', `empty|${view.key}|${taker}`, () => calmScreen('🎈', 'Halle leer!', `${taker ? `${esc(taker)} hat den letzten Ballon ins Depot gebracht.` : 'Der letzte Ballon ist weg.'} Die Runde ist zu Ende.`));
+    return;
+  }
+  if (view.kind === 'question') {
+    draw('hunt', `question|${view.key}`, () => `<div class="overlay ov-fail"><div class="ov-mark">✗</div><h1 class="ph-title">Zeit abgelaufen</h1>
+      <p class="ov-q">Hast du trotzdem einen Ballon mitgebracht?</p>
+      <p class="rule">Er darf ins Depot, zählt aber nicht. Deine Antwort hält nur den Zähler der Halle richtig.</p>
+      <div class="ov-two">
+        <button class="big-yes" id="answer-yes" data-answer="yes" type="button">Ja, mitgebracht</button>
+        <button class="big-no" id="answer-no" data-answer="no" type="button">Nein, nichts</button>
+      </div>
+      <p class="rule" id="answer-err" role="alert"></p>
+    </div>`);
+  } else {
+    draw('hunt', `failed|${view.key}`, () => `<div class="overlay ov-fail"><div class="ov-mark">✗</div><h1 class="ph-title">Zeit abgelaufen</h1><p class="rule">${view.trial ? 'Im Spiel würde ein Ballon jetzt nicht mehr zählen.' : 'Ein mitgebrachter Ballon darf ins Depot, zählt aber nicht.'}</p></div>`);
+  }
   // The clock of this phone says it is over: ask the server to close it now.
   if (lastState.me.hunt && lateTickFor !== view.key) {
     lateTickFor = view.key;
@@ -489,6 +555,60 @@ async function onPress() {
     if (rule) rule.textContent = ERRORS.network;
   } finally {
     pressBusy = false;
+  }
+  redraw();
+}
+
+// «Kein Ballon gefunden»: asks once, the hunt cannot be taken back.
+async function onNoFind() {
+  const hunt = lastState?.me?.hunt;
+  if (pressBusy || !hunt) return;
+  pressBusy = true;
+  try {
+    const r = await rpc('hunt_no_balloon', { p_code: syncedCode, p_token: token });
+    const { me } = lastState;
+    if (r.ok) {
+      noFindAsk = null;
+      localHunt = null;
+      localResult = { status: 'failed', end_reason: 'no_balloon', kind: hunt.kind, started_at: hunt.started_at, ended_at: new Date(serverNow()).toISOString() };
+      me.hunt = null;
+      me.last_hunt = localResult;
+    } else if (r.reason === 'no_hunt') {
+      noFindAsk = null;
+      localHunt = null;
+    }
+    sync?.refresh();
+  } catch (e) {
+    console.warn(e);
+    const err = $('nofind-err');
+    if (err) err.textContent = ERRORS.network;
+  } finally {
+    pressBusy = false;
+  }
+  redraw();
+}
+
+async function onAnswer(brought) {
+  const { me } = lastState;
+  const key = me.hunt_question?.started_at || me.hunt?.started_at;
+  if (answerBusy || !key) return;
+  answerBusy = true;
+  try {
+    const r = await rpc('hunt_answer', { p_code: syncedCode, p_token: token, p_brought: brought });
+    if (r.ok || r.reason === 'no_question') {
+      localAnswer = { key, brought: r.ok ? brought : false, at: serverNow() };
+      me.hunt_question = null;
+      if (me.hunt && sameTime(me.hunt.started_at, key)) me.hunt = null;
+      // Answered elsewhere already, or the round is over: no result screen for nothing.
+      if (!r.ok) localAnswer = null;
+    }
+    sync?.refresh();
+  } catch (e) {
+    console.warn(e);
+    const err = $('answer-err');
+    if (err) err.textContent = ERRORS.network;
+  } finally {
+    answerBusy = false;
   }
   redraw();
 }
@@ -671,15 +791,18 @@ function parseCents(text) {
 function renderCashout({ me }) {
   const sent = me.cash_cents !== null && !cashEditing;
   const allowed = me.balloons_allowed;
+  // Once sent, the amount stands large on its own, so that a typo catches the eye before the host closes.
   draw('cashout', `${sent}|${allowed}|${sent ? me.cash_cents : ''}`, () => `<form class="ph-pad" id="cash-form" autocomplete="off">
     <p class="label">Kassensturz</p>
     <h1 class="ph-title">Du darfst ${esc(allowed)} ${balloonsWord(allowed)} platzen lassen</h1>
     <p class="dim">Zähle dein Geld am Tisch und gib den Gesamtbetrag ein.</p>
-    <div class="field"><label class="label" for="cash">Betrag in Euro</label>
-      <input class="input amount" id="cash" inputmode="decimal" maxlength="7" placeholder="0.00" autocomplete="off" value="${me.cash_cents === null ? '' : (me.cash_cents / 100).toFixed(2)}" ${sent ? 'disabled' : ''}></div>
     ${sent
-      ? '<p class="cash-ok">✓ Gesendet. Der Betrag bleibt verborgen.</p><button class="btn btn-block" id="cash-edit" data-cash-edit type="button">Ändern</button>'
-      : '<button class="btn btn-primary btn-big btn-block" id="cash-go" type="submit">Senden</button><p class="form-err" id="cash-err" role="alert"></p>'}
+      ? `<div class="cash-sent"><span class="label">✓ Gesendet</span><b id="cash-sent">${esc(money(me.cash_cents))}</b></div>
+        <p class="dim">Stimmt der Betrag? Ändern geht, bis der Host den Kassensturz abschliesst. Auf dem TV bleibt er bis dahin verborgen.</p>
+        <button class="btn btn-block" id="cash-edit" data-cash-edit type="button">Ändern</button>`
+      : `<div class="field"><label class="label" for="cash">Betrag in Euro</label>
+        <input class="input amount" id="cash" inputmode="decimal" maxlength="7" placeholder="0.00" autocomplete="off" value="${me.cash_cents === null ? '' : (me.cash_cents / 100).toFixed(2)}"></div>
+        <button class="btn btn-primary btn-big btn-block" id="cash-go" type="submit">Senden</button><p class="form-err" id="cash-err" role="alert"></p>`}
   </form>`);
 }
 
@@ -798,6 +921,25 @@ $('phone').addEventListener('click', (e) => {
   }
   if (e.target.closest('[data-press]')) {
     onPress();
+    return;
+  }
+  if (e.target.closest('[data-nofind]')) {
+    noFindAsk = lastState?.me?.hunt?.started_at || null;
+    redraw();
+    return;
+  }
+  if (e.target.closest('[data-nofind-no]')) {
+    noFindAsk = null;
+    redraw();
+    return;
+  }
+  if (e.target.closest('[data-nofind-yes]')) {
+    onNoFind();
+    return;
+  }
+  const answer = e.target.closest('[data-answer]');
+  if (answer) {
+    onAnswer(answer.dataset.answer === 'yes');
     return;
   }
   const give = e.target.closest('[data-give]');

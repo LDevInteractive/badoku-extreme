@@ -66,6 +66,23 @@ body { overflow: hidden; }
 .hunt-btn .fill { position: absolute; inset: 0 auto 0 0; background: rgba(255, 255, 255, 0.2); }
 .hunt-btn span { position: relative; }
 .hunt-btn.ready { background: var(--accent); color: var(--accent-ink); cursor: pointer; font-size: 36px; box-shadow: 0 0 40px var(--accent-glow); }
+/* «Kein Ballon gefunden» sits well apart from the depot button, so a running player does not hit it. */
+.hunt-gap { height: var(--s-5); flex: none; }
+.nofind-btn { width: 100%; min-height: 60px; border-radius: var(--r-3); border: 2px solid rgba(255, 255, 255, 0.35); background: transparent; color: rgba(255, 255, 255, 0.55); font-size: 19px; font-weight: 800; }
+.nofind-btn.ready { color: #fff; border-color: rgba(255, 255, 255, 0.8); cursor: pointer; }
+.ov-calm { background: #262a36; color: #fff; }
+.ov-calm .rule { font-size: 15px; opacity: 0.9; }
+.ov-q { margin: var(--s-1) 0 0; font-size: 24px; font-weight: 800; line-height: 1.2; }
+.ov-two { display: grid; gap: var(--s-3); width: 100%; }
+.big-yes, .big-no { min-height: 88px; border-radius: var(--r-3); font-size: 24px; font-weight: 900; cursor: pointer; }
+.big-yes { border: 0; background: #fff; color: #111; }
+.big-no { border: 2px solid rgba(255, 255, 255, 0.6); background: rgba(255, 255, 255, 0.14); color: #fff; }
+.dimmer { position: absolute; inset: 0; z-index: 6; background: rgba(0, 0, 0, 0.45); }
+.sheet { position: absolute; inset: auto 0 0 0; z-index: 7; display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-5) var(--s-5) calc(var(--s-6) + env(safe-area-inset-bottom, 0px)); border-radius: 22px 22px 0 0; background: var(--bg-elev); color: var(--text); box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.6); }
+.sheet h2 { margin: 0; font-size: 26px; font-weight: 900; }
+.sheet p { margin: 0; color: var(--text-dim); font-size: 16px; line-height: 1.45; }
+.sheet .big-yes { background: var(--text); color: var(--bg); }
+.sheet .big-no { border-color: var(--border-strong); background: transparent; color: var(--text); }
 
 /* ---------- Break ---------- */
 .sips-title { padding-right: var(--s-5); }
@@ -81,7 +98,9 @@ body { overflow: hidden; }
 
 /* ---------- Cashout and results ---------- */
 .amount { min-height: 72px; font-size: 36px; font-weight: 800; text-align: center; font-variant-numeric: tabular-nums; }
-.cash-ok { color: var(--ok); font-weight: 800; text-align: center; }
+.cash-sent { display: flex; flex-direction: column; align-items: center; gap: var(--s-1); padding: var(--s-4); border-radius: var(--r-3); border: 2px solid var(--ok); background: var(--bg-elev); }
+.cash-sent .label { color: var(--ok); }
+.cash-sent b { font-size: 56px; font-weight: 900; line-height: 1.05; font-variant-numeric: tabular-nums; }
 .statline { display: flex; justify-content: space-between; gap: var(--s-3); padding: var(--s-2) 0; border-bottom: 1px solid var(--border); font-size: 16px; }
 .statline b { font-variant-numeric: tabular-nums; text-align: right; }
 .ph-rank { color: var(--accent); font-size: 72px; }

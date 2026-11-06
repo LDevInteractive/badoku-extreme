@@ -42,7 +42,8 @@ Reihenfolge** einfügen und ausführen (eine Datei pro Lauf):
 | `011_trial_rpc.sql` | Proberunde 4×4: Start, Rückkehr in die Lobby, nichts davon zählt |
 | `012_cashout_rpc.sql` | Kassensturz, Powersudoku 6×6, Rangliste, Statistik |
 | `013_auto_reveal.sql` | Die letzten Felder einer Runde füllen sich von selbst |
-| `014_…` | folgen mit den nächsten Meilensteinen |
+| `014_balloons_found.sql` | Nur Ballone, die die Halle verlassen, zählen; «Kein Ballon gefunden», Wettrennen um den letzten Ballon, neue Enthüllung beim Kassensturz |
+| `015_…` | folgen mit den nächsten Meilensteinen |
 
 ### 3. Frontend konfigurieren
 

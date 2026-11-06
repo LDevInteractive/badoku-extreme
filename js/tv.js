@@ -6,7 +6,6 @@ import { startSync } from './sync.js';
 import { serverNow, updateCountdowns } from './clock.js';
 import { gridHtml, isFxRunning } from './grid.js';
 import { qrSvg } from './qr.js';
-import { CASH_COUNT_MS } from './config.js';
 import { $, esc, isRevealing, money, setConn, storeGet, storeRemove, storeSet, withBusy } from './util.js';
 
 const STAGE_W = 1920;
@@ -299,6 +298,9 @@ function tickerLine(event) {
   if (type === 'player_locked') return `${payload.name} ist ${payload.seconds} s gesperrt`;
   if (type === 'hunt_success') return `Jagd von ${payload.name} erfolgreich`;
   if (type === 'hunt_failed') return `Jagd von ${payload.name}: Zeit abgelaufen`;
+  if (type === 'hunt_no_balloon') return `${payload.name}: kein Ballon gefunden`;
+  if (type === 'hunt_late_answer') return payload.brought ? `${payload.name}: zu spät, Ballon mitgebracht (zählt nicht)` : `${payload.name}: zu spät, nichts mitgebracht`;
+  if (type === 'hall_empty') return `Halle leer: ${payload.name} holt den letzten Ballon`;
   if (type === 'balloons_empty') return 'Letzter Ballon unterwegs: Das Spiel endet';
   if (type === 'round_started') return `Runde ${payload.round_no} startet`;
   return null;
@@ -330,7 +332,7 @@ function renderRound(state) {
   if (screen !== 'round') {
     screen = 'round';
     gridKey = '';
-    $('tv').innerHTML = '<div class="tv-round"><div class="tv-grid" id="tv-grid"></div><div class="tv-side" id="tv-side"></div></div>';
+    $('tv').innerHTML = '<div class="tv-round"><div class="tv-grid" id="tv-grid"></div><div class="tv-side" id="tv-side"></div><div class="tv-banner" id="tv-banner" hidden></div></div>';
   }
   // The grid is only redrawn when its content changes, so effects run undisturbed.
   const key = `${round.id}/${lines.length}/${round.revealed}`;
@@ -360,10 +362,20 @@ function renderRound(state) {
       <div class="tv-panel tv-stat"><span class="tv-label">Runde ${esc(round.round_no)}</span><b>${roundValue}</b></div>
       <div class="tv-panel tv-stat hot"><span class="tv-label">Ballone</span><b>${esc(game.balloons_left)}</b></div>
     </div>`;
+  // More hunts than balloons: whoever confirms first gets one (CLAUDE.md 2.8).
+  const mainHunts = state.hunts_active.filter((h) => h.kind === 'main').length;
+  const left = game.balloons_left;
+  let huntsTitle = '<h2 class="tv-label tv-hunts-title">Jagden</h2>';
+  if (!trial && left === 1 && mainHunts >= 2) huntsTitle = '<h2 class="tv-race">Wettrennen um den letzten Ballon!</h2>';
+  else if (!trial && left > 0 && mainHunts > left) huntsTitle = `<h2 class="tv-race">Wettrennen: ${esc(mainHunts)} Jagden, ${esc(left)} Ballone</h2>`;
+  const emptied = !trial && ending && left === 0 ? ticker.find((e) => e.type === 'hall_empty') : null;
+  const banner = $('tv-banner');
+  banner.hidden = !emptied;
+  if (emptied) banner.innerHTML = `<b>HALLE LEER!</b><span>${esc(emptied.payload.name)} hat den letzten Ballon geholt</span>`;
   $('tv-side').innerHTML = `
     ${tag ? `<div><span class="tv-tag">${esc(tag)}</span></div>` : ''}
     ${stats}
-    <div class="tv-panel"><h2 class="tv-label tv-hunts-title">Jagden</h2>${huntsHtml(state)}</div>
+    <div class="tv-panel">${huntsTitle}${huntsHtml(state)}</div>
     <div class="tv-panel"><div class="score">
       <span></span><span class="h" style="text-align:left">Spieler</span><span class="h">Linien</span><span class="h">Jagden ✓</span>
       ${players.map((p) => `<span class="sw" style="--c:${esc(p.color)}"></span><span>${esc(p.name)}</span><span class="n">${esc(linesOf(p))}</span><span class="n">${esc(huntsOf(p))}</span>`).join('')}
@@ -547,31 +559,90 @@ async function onCloseCash(e) {
   }
 }
 
-// The amounts count up by the server's clock, so a reload continues instead of restarting.
-function paintCount(start) {
-  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const part = reduce ? 1 : Math.max(0, Math.min(1, (serverNow() - start) / CASH_COUNT_MS));
-  document.querySelectorAll('[data-count]').forEach((el) => {
-    el.textContent = money(Math.round(Number(el.dataset.count) * part));
-  });
-  if (part < 1 && screen === 'reveal') requestAnimationFrame(() => paintCount(start));
+// The reveal (CLAUDE.md 2.10): for cash_count_s every column rises by the same cents per second,
+// without names or colours; then every cash_step_s one place is revealed, from the last to the
+// first, equal amounts together. Everything runs by the server's clock, so a reload continues.
+const MASK = '• • • • •';
+
+function cashGroups(players) {
+  const list = players.slice().sort((a, b) => b.cash_cents - a.cash_cents);
+  const groups = [];
+  for (let i = 0; i < list.length;) {
+    const same = list.filter((p) => p.cash_cents === list[i].cash_cents);
+    groups.push({ rank: i + 1, players: same });
+    i += same.length;
+  }
+  return groups;
 }
 
 function renderReveal({ game, players }) {
   if (screen === 'reveal') return;
   screen = 'reveal';
-  const total = players.reduce((sum, p) => sum + p.cash_cents, 0);
-  const tie = game.phase === 'tiebreak';
-  $('tv').innerHTML = `<div class="tv-break">
-    <h1 class="tv-title">Kassensturz</h1>
-    <div class="cash-grid">${players.map((p) => `<div class="cash-row"><span class="sw" style="--c:${esc(p.color)}"></span><div>${esc(p.name)}<small>${allowedLine(p)}</small></div><span class="val" data-count="${esc(p.cash_cents)}"></span></div>`).join('')}</div>
-    <div class="tv-break-foot">
-      <span>Summe aller Eingaben: <b class="tv-sum">${money(total)}</b> von max. ${money(game.config.coins_total_cents)}</span>
-      <span class="tv-next">${tie ? 'Gleichstand! Powersudoku' : 'Rangliste'} in <b data-cd="${new Date(game.phase_deadline).getTime()}" data-fmt="s"></b> s</span>
+  const groups = cashGroups(players);
+  const rising = players.slice().sort((a, b) => a.cash_cents - b.cash_cents); // last place on the left
+  const tied = new Set(groups.filter((g) => g.players.length > 1).flatMap((g) => g.players.map((p) => p.id)));
+  const rankOf = new Map(groups.flatMap((g) => g.players.map((p) => [p.id, g.rank])));
+  $('tv').innerHTML = `<div class="cr">
+    <div class="cr-head"><h1 class="tv-title">Kassensturz</h1><span class="cr-step" id="cr-step"></span></div>
+    <div class="cr-body">
+      <div class="cr-chart-box">
+        <div class="cr-chart" style="--n:${players.length}">${rising.map((p) => `<div class="cr-col" data-pid="${esc(p.id)}" style="--c:${esc(p.color)}"><div class="cr-amt" data-cents="${esc(p.cash_cents)}">${money(0)}</div><div class="cr-bar" data-bar="${esc(p.cash_cents)}"></div></div>`).join('')}</div>
+        <div class="cr-names" style="--n:${players.length}">${rising.map((p) => `<div data-pid="${esc(p.id)}" style="--c:${esc(p.color)}">?</div>`).join('')}</div>
+      </div>
+      <div class="cr-table">${groups.flatMap((g) => g.players).map((p) => `<div class="cr-row ${tied.has(p.id) ? 'tie' : ''}" data-pid="${esc(p.id)}" style="--c:${esc(p.color)}"><span class="cr-rk">${esc(rankOf.get(p.id))}.</span><span class="cr-sw"></span><span class="cr-nm">${MASK}</span><span class="cr-val" data-cents="${esc(p.cash_cents)}">${money(0)}</span></div>`).join('')}</div>
     </div>
+    <div class="cr-foot"><span>Summe aller Eingaben: <b id="cr-sum">${money(0)}</b> von max. ${money(game.config.coins_total_cents)}</span><span class="cr-next" id="cr-next"></span></div>
   </div>`;
-  updateCountdowns($('tv'));
-  paintCount(new Date(game.phase_started_at).getTime());
+  paintReveal();
+}
+
+function paintReveal() {
+  if (screen !== 'reveal' || !lastState || !isRevealing(lastState.game, serverNow())) return;
+  const { game, players } = lastState;
+  const countS = game.config.cash_count_s;
+  const stepS = game.config.cash_step_s;
+  const t = (serverNow() - new Date(game.phase_started_at).getTime()) / 1000;
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const max = Math.max(1, ...players.map((p) => p.cash_cents));
+  const shown = (cents) => (reduce || t >= countS ? cents : Math.min(cents, Math.floor((max * t) / Math.max(countS, 0.001))));
+  document.querySelectorAll('.cr [data-cents]').forEach((el) => { el.textContent = money(shown(Number(el.dataset.cents))); });
+  document.querySelectorAll('.cr [data-bar]').forEach((el) => { el.style.setProperty('--h', shown(Number(el.dataset.bar)) / max); });
+  $('cr-sum').textContent = money(players.reduce((sum, p) => sum + shown(p.cash_cents), 0));
+
+  const order = cashGroups(players).reverse();
+  const done = t < countS ? 0 : Math.min(order.length, 1 + Math.floor((t - countS) / stepS));
+  const open = new Set(order.slice(0, done).flatMap((g) => g.players.map((p) => p.id)));
+  const top = new Set(order[order.length - 1].players.map((p) => p.id));
+  const tied = new Set(order.filter((g) => g.players.length > 1).flatMap((g) => g.players.map((p) => p.id)));
+  const nameOf = new Map(players.map((p) => [p.id, p.name]));
+  document.querySelectorAll('.cr-col').forEach((el) => {
+    el.classList.toggle('shown', open.has(el.dataset.pid));
+    el.classList.toggle('top', open.has(el.dataset.pid) && top.has(el.dataset.pid));
+  });
+  document.querySelectorAll('.cr-names div, .cr-row').forEach((el) => {
+    const on = open.has(el.dataset.pid);
+    if (on === el.classList.contains('shown')) return;
+    el.classList.toggle('shown', on);
+    const name = esc(nameOf.get(el.dataset.pid));
+    const target = el.classList.contains('cr-row') ? el.querySelector('.cr-nm') : el;
+    if (!on) target.textContent = el.classList.contains('cr-row') ? MASK : '?';
+    else if (el.classList.contains('cr-row')) target.innerHTML = name + (tied.has(el.dataset.pid) ? '<span class="cr-chip">Gleichstand</span>' : '');
+    else target.innerHTML = name + (tied.has(el.dataset.pid) ? '<small>Gleichstand</small>' : '');
+  });
+
+  const step = $('cr-step');
+  const next = $('cr-next');
+  const end = new Date(game.phase_deadline).getTime();
+  if (done === 0) step.textContent = 'Die Beträge steigen …';
+  else if (done < order.length) {
+    const g = order[done - 1];
+    const places = g.players.length > 1 ? `${g.rank}.–${g.rank + g.players.length - 1}.` : `${g.rank}.`;
+    step.innerHTML = `Platz <b>${places}</b> aufgedeckt · nächster in <b>${Math.max(0, Math.ceil(countS + done * stepS - t))}</b> s`;
+  } else step.textContent = 'Alle aufgedeckt';
+  next.innerHTML = done >= order.length
+    ? `${game.phase === 'tiebreak' ? 'Gleichstand! Powersudoku' : 'Rangliste'} in <b>${Math.max(0, Math.ceil((end - serverNow()) / 1000))}</b> s`
+    : '';
+  requestAnimationFrame(paintReveal);
 }
 
 // ---------- Tiebreak ----------

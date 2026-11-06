@@ -91,6 +91,20 @@ wieder. Erwartete Ausgabe: «Alle Regeltests bestanden: … Prüfungen». Schlä
 bricht alles mit `FAIL: …` ab und es bleibt nichts in der Datenbank zurück. Nicht während eines
 echten Spiels ausführen.
 
+## Bot-Simulation
+
+```
+node tools/bots.mjs --players 7 --speed normal
+```
+
+Erstellt ein Spiel im echten Supabase-Projekt und lässt Bots es bis zur Rangliste spielen
+(ohne Abhängigkeiten, Node ≥ 20). Das Skript übernimmt auch die Rolle des TV (Tick, Start,
+Kassensturz abschliessen). Zuschauen geht in `tv.html` mit «Verbinden» und dem ausgegebenen Code
+und PIN. Am Ende steht eine Auswertung: Dauer pro Runde mit Anzahl Vorgaben, Linien, Jagden,
+Fehler, Shots und Rangliste. `--scale 10` lässt alles zehnmal schneller laufen und rechnet die
+Zeiten zurück. Weitere Optionen: `node tools/bots.mjs --help`. Die Testspiele bleiben in der
+Datenbank stehen.
+
 ## Smoke-Test
 
 `index.html` öffnen (auf GitHub Pages oder lokal, siehe unten). Die Karte **Systemcheck** zeigt:

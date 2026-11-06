@@ -4,8 +4,10 @@
 import { rpc } from './api.js';
 import { startSync } from './sync.js';
 import { serverNow, updateCountdowns } from './clock.js';
-import { gridHtml, isFxRunning } from './grid.js';
+import { SOUND } from './config.js';
+import { gridHtml, isFxRunning, revealCues } from './grid.js';
 import { qrSvg } from './qr.js';
+import { play, unlock } from './sound.js';
 import { $, esc, isRevealing, money, setConn, storeGet, storeRemove, storeSet, withBusy } from './util.js';
 
 const STAGE_W = 1920;
@@ -45,6 +47,9 @@ let gridKey = '';
 let lastState = null;
 let breakKey = '';
 let starting = false;
+let heard = null; // what the sounds have already reacted to, see cueSounds
+const countdownHeard = new Set();
+let revealDone = null;
 
 function fitStage() {
   const scale = Math.min(window.innerWidth / STAGE_W, window.innerHeight / STAGE_H);
@@ -144,6 +149,7 @@ function openGame(nextCode) {
   code = nextCode;
   hostPin = storeGet(pinKey(code));
   screen = null;
+  heard = null;
   storeSet(CODE_KEY, code);
   $('conn').hidden = false;
   setConn('warn');
@@ -164,6 +170,7 @@ function openGame(nextCode) {
     updateCountdowns($('tv'));
     updateHuntBars();
     updateForce();
+    cueCountdown();
   }, COUNTDOWN_MS);
 }
 
@@ -176,13 +183,146 @@ function leaveGame(message = '') {
   code = null;
   hostPin = null;
   lastState = null;
+  heard = null;
   storeRemove(CODE_KEY);
   renderStart(message);
 }
 
 const isBreak = (phase) => phase === 'break_distribute' || phase === 'break_drink';
 
+// ---------- Sounds ----------
+// Every sound comes from comparing a snapshot with the one before, so a reload stays silent
+// and nothing plays twice. Only the TV makes sounds, the phone stays silent.
+const RUNNING = ['round_running', 'trial_running'];
+const eventKey = (e) => `${e.created_at}/${e.type}/${JSON.stringify(e.payload)}`;
+const shotCount = (state) => (state.sip_transfers || []).reduce((sum, t) => sum + t.amount, 0);
+
+// Cues lying further in the past than this are skipped, later ones start right away.
+const LATE_S = 0.1;
+const cue = (id, delayS, opt) => {
+  if (delayS >= -LATE_S) play(id, delayS, opt);
+};
+
+// More hunts than balloons left (CLAUDE.md 2.8), same rule as the title above the hunts.
+function raceOn({ game, round, hunts_active: hunts }) {
+  if (!round || round.kind !== 'main' || game.phase !== 'round_running') return false;
+  const left = game.balloons_left;
+  return left > 0 && hunts.filter((h) => h.kind === 'main').length > left;
+}
+
+function cueSounds(state) {
+  const prev = heard;
+  const { game, round } = state;
+  const lineKey = (l) => `${round.id}/${l.line_type}/${l.idx}`;
+  const lines = round ? state.lines || [] : [];
+  heard = {
+    gameId: game.id,
+    phase: game.phase,
+    roundId: round?.id ?? null,
+    lines: new Set(lines.map(lineKey)),
+    events: new Set(state.ticker.map(eventKey)),
+    locked: new Map(state.players.map((p) => [p.id, p.locked_until])),
+    hunts: state.hunts_active,
+    trialSuccess: state.trial_success || {},
+    race: raceOn(state),
+    shotRound: game.round_no,
+    shots: shotCount(state),
+  };
+  if (!prev || prev.gameId !== game.id) return;
+
+  // Sudoku startet
+  if (round && round.id !== prev.roundId && RUNNING.includes(game.phase)) cue('start', 0);
+
+  // Lines: a pop per uncovered cell exactly when its balloon bursts, one chord when the line
+  // lights up, one wipe for all new neutral lines together. A line this TV sees too late for
+  // its effect (grid.js) still gets its chord or wipe, right away.
+  const cues = new Map(revealCues(state).map((c) => [c.key, c]));
+  let glow = null;
+  let neutral = false;
+  const stacked = new Map(); // pops per 10 ms slot
+  for (const l of lines) {
+    const key = lineKey(l);
+    if (prev.lines.has(key)) continue;
+    if (l.status === 'neutral') {
+      neutral = true;
+      continue;
+    }
+    const c = cues.get(key);
+    if (!c) {
+      glow ??= 0;
+      continue;
+    }
+    c.pops.forEach((ms) => {
+      const slot = Math.round(ms / 10);
+      const n = stacked.get(slot) || 0;
+      if (n >= SOUND.popStack) return;
+      stacked.set(slot, n + 1);
+      cue('pop', ms / 1000);
+    });
+    glow = Math.max(glow ?? 0, c.glow / 1000);
+  }
+  if (glow !== null) cue('line', glow);
+  if (neutral) cue('neutral', 0);
+  // Race and round end wait until the line has had its moment.
+  const afterLine = glow === null ? 0 : glow + SOUND.afterLineGapS;
+
+  // Hunts of the main game come from the ticker. Trial hunts write no events: whoever's
+  // trial counter went up pressed in time, the others ran out.
+  const fresh = state.ticker.filter((e) => !prev.events.has(eventKey(e)));
+  const has = (...types) => fresh.some((e) => types.includes(e.type));
+  let success = has('hunt_success');
+  let fail = has('hunt_failed', 'hunt_no_balloon');
+  if (round?.kind === 'trial') {
+    const still = new Set(state.hunts_active.map((h) => h.id));
+    for (const h of prev.hunts) {
+      if (h.kind !== 'trial' || still.has(h.id)) continue;
+      if ((heard.trialSuccess[h.player_id] || 0) > (prev.trialSuccess[h.player_id] || 0)) success = true;
+      else fail = true;
+    }
+  }
+  if (success) cue('success', 0);
+  if (fail) cue('fail', 0);
+  if (has('hall_empty')) cue('empty', success ? SOUND.emptyAfterSuccessS : 0);
+
+  // Sperre: a lock that was not there before and still runs
+  const now = serverNow();
+  if (state.players.some((p) => p.locked_until && p.locked_until !== prev.locked.get(p.id) && new Date(p.locked_until).getTime() > now)) {
+    cue('lock', 0);
+  }
+
+  if (heard.race && !prev.race) cue('race', afterLine);
+
+  // Rundenende, unless the hall is empty: then the gong above says it.
+  const hallEmpty = round?.kind === 'main' && game.balloons_left <= 0;
+  if (RUNNING.includes(prev.phase) && !RUNNING.includes(game.phase) && round?.id === prev.roundId && !hallEmpty) {
+    cue('end', afterLine);
+  }
+
+  // Shot verteilt: one sound per shot, several at once (Zufall, timeout) spread out and capped.
+  if (heard.shotRound === prev.shotRound && heard.shots > prev.shots) {
+    const n = Math.min(heard.shots - prev.shots, SOUND.shotMax);
+    for (let i = 0; i < n; i++) cue('shot', i * SOUND.shotStaggerS);
+  }
+}
+
+// Letzte 10 Sekunden: one beep each time the round timer jumps to the next lower second.
+// Scheduled slightly ahead from the 250 ms loop, so the beep lands on the second.
+function cueCountdown() {
+  const state = lastState;
+  if (!state?.round || !RUNNING.includes(state.game.phase)) return;
+  const end = new Date(state.round.deadline).getTime();
+  const now = serverNow();
+  for (let left = SOUND.countdownFromS; left >= 1; left--) {
+    const key = `${state.round.id}/${left}`;
+    const ms = end - left * 1000 - now;
+    if (countdownHeard.has(key) || ms > COUNTDOWN_MS * 1.5) continue;
+    countdownHeard.add(key);
+    cue('countdown', ms / 1000, { left });
+  }
+}
+
 function render(state) {
+  cueSounds(state);
   lastState = state;
   const { phase } = state.game;
   if (phase === 'lobby') renderLobby(state);
@@ -582,6 +722,10 @@ function renderReveal({ game, players }) {
   const rising = players.slice().sort((a, b) => a.cash_cents - b.cash_cents); // last place on the left
   const tied = new Set(groups.filter((g) => g.players.length > 1).flatMap((g) => g.players.map((p) => p.id)));
   const rankOf = new Map(groups.flatMap((g) => g.players.map((p) => [p.id, g.rank])));
+  // Beträge steigen, for as long as the columns still rise
+  const riseS = game.config.cash_count_s - (serverNow() - new Date(game.phase_started_at).getTime()) / 1000;
+  if (riseS > 0) play('rise', 0, { dur: riseS });
+  revealDone = null;
   $('tv').innerHTML = `<div class="cr">
     <div class="cr-head"><h1 class="tv-title">Kassensturz</h1><span class="cr-step" id="cr-step"></span></div>
     <div class="cr-body">
@@ -612,6 +756,9 @@ function paintReveal() {
   const order = cashGroups(players).reverse();
   const done = t < countS ? 0 : Math.min(order.length, 1 + Math.floor((t - countS) / stepS));
   const open = new Set(order.slice(0, done).flatMap((g) => g.players.map((p) => p.id)));
+  // Platz aufgedeckt, and the winner's own sound for the first place
+  if (revealDone !== null && done > revealDone) play(done === order.length ? 'winner' : 'place');
+  revealDone = done;
   const top = new Set(order[order.length - 1].players.map((p) => p.id));
   const tied = new Set(order.filter((g) => g.players.length > 1).flatMap((g) => g.players.map((p) => p.id)));
   const nameOf = new Map(players.map((p) => [p.id, p.name]));
@@ -730,6 +877,9 @@ function renderResults({ players, palette, stats }) {
 }
 
 // ---------- Boot ----------
+// Browsers allow sound only after a click or key press on the page.
+document.addEventListener('pointerdown', unlock);
+document.addEventListener('keydown', unlock);
 window.addEventListener('resize', fitStage);
 fitStage();
 

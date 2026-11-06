@@ -20,3 +20,20 @@ export const REVEAL_FX = {
   neutral: { step: 26, lead: 0, cell: 520, tail: 0, nameDelay: 0, nameDur: 0 },
   shardsPerBalloon: 7,
 };
+
+// TV sounds (js/sound.js), chosen in mockups/sounds.html. Only the TV plays them, the phone
+// stays silent. volume = master volume 0..1, all times in seconds.
+// countdownFromS = the round timer beeps from this many seconds left; emptyAfterSuccessS = gap
+// between "Ballon im Depot" and "Halle leer"; afterLineGapS = race and round end wait this long
+// after a line's reveal; shotStaggerS/shotMax = several shots at once are spread out and capped;
+// popStack = at most this many balloon pops at the same moment (cells left and right of the
+// origin burst together, two lines at once even more).
+export const SOUND = {
+  volume: 0.8,
+  popStack: 2,
+  countdownFromS: 10,
+  emptyAfterSuccessS: 0.7,
+  afterLineGapS: 0.6,
+  shotStaggerS: 0.12,
+  shotMax: 6,
+};

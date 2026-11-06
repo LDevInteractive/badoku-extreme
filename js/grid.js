@@ -56,6 +56,25 @@ export function isFxRunning(state) {
   return !!state.round && describeLines(state).some((d) => d.active);
 }
 
+/**
+ * Sound cues of the running reveal effects, in ms from now: when each balloon pops and when
+ * the line lights up. Uses the same timing as the effect, so sound and picture stay together.
+ */
+export function revealCues(state) {
+  if (!state.round) return [];
+  const n = state.round.size;
+  return describeLines(state).filter((d) => d.active).map((d) => {
+    const t = REVEAL_FX[d.style];
+    const reach = Math.max(d.originK, n - 1 - d.originK);
+    return {
+      key: `${state.round.id}/${d.line.line_type}/${d.line.idx}`,
+      neutral: d.style === 'neutral',
+      pops: d.cells.flatMap((c, k) => (d.fresh.has(c) ? [t.lead + Math.abs(k - d.originK) * t.step - d.elapsed] : [])),
+      glow: t.lead + reach * t.step + t.cell * 0.35 - d.elapsed,
+    };
+  });
+}
+
 function seeded(seed) {
   const x = Math.sin(seed * 127.1 + 11.7) * 43758.5453;
   return x - Math.floor(x);

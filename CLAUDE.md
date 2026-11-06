@@ -506,6 +506,30 @@ Gilt auf dem TV und auf allen Handys. Das Handy des Lösers zeigt stattdessen so
 - **Robustheit:** Der Effekt läuft ab dem Moment, in dem das Gerät die Linie zum ersten Mal sieht, damit er auch bei langsamer Verbindung vollständig zu sehen ist. Ein neuer Snapshot setzt ihn fort, statt ihn neu zu starten. Nach Neuladen läuft er nur, wenn die Linie laut `claimed_at` und Serverzeit gerade erst gelöst wurde.
 - `prefers-reduced-motion`: nur Einblenden und Name.
 
+### 9.6 Töne (in der Klang-Attrappe abgenommen, Vorlage `mockups/sounds.html`)
+Nur der TV macht Töne, das Handy bleibt stumm. Alle Töne entstehen in `js/sound.js` per WebAudio (keine Dateien), Lautstärke und Abstände stehen in `SOUND` in `js/config.js`.
+
+| Moment | Ton |
+|---|---|
+| Ein Sudoku startet (auch Proberunde) | Startpfiff |
+| Linie gelöst: jeder Ballon platzt | Plopp, genau im Takt des Effekts (§9.5) |
+| Linie leuchtet auf | Treffer-Akkord |
+| Neutrale Linien | leises Wischen (einmal für alle gleichzeitig) |
+| Ballon im Depot | Kasse |
+| Jagd ohne Erfolg (Frist, «Kein Ballon») | Wah-wah |
+| Sperre | Gittertür |
+| Wettrennen beginnt | Alarm (nach dem Akkord der Linie) |
+| Halle leer | Schlussgong (statt Rundenende) |
+| Letzte 10 Sekunden der Runde | Piepen pro Sekunde, ab 3 s höher |
+| Rundenende | Horn kurz |
+| Shot verteilt | Gläser (mehrere gleichzeitig gestaffelt) |
+| Kassensturz: Beträge steigen | steigender Ton |
+| Kassensturz: Platz aufgedeckt | Ding |
+| Kassensturz: Sieger | Fanfare |
+
+- Töne entstehen aus dem Vergleich zweier Snapshots: Neuladen bleibt stumm, nichts spielt doppelt. Sieht der TV eine Linie zu spät für ihren Effekt, kommt der Ton sofort.
+- Browser spielen erst nach einem Klick oder Tastendruck auf der Seite Töne. Nach einem Neuladen des TV einmal irgendwo klicken.
+
 ---
 
 ## 10. Tests
